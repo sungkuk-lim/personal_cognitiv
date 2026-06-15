@@ -22,6 +22,7 @@ void main() async {
   await BackgroundRecallWorker.initialize();
   await BackgroundRecallWorker.register();
   final prefs = await SharedPreferences.getInstance();
+  await CrashReporting.sendConnectivitySmokeTestOnce(prefs);
   if (AppEnv.isConfigured) {
     await Supabase.initialize(url: AppEnv.supabaseUrl, publishableKey: AppEnv.supabaseAnonKey);
   }

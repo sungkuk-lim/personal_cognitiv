@@ -4,6 +4,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:shared_preferences/shared_preferences.dart';
+
 import '../firebase_options.dart';
 import 'env.dart';
 
@@ -56,6 +58,22 @@ class CrashReporting {
       _record('PlatformError', '$error\n$stack');
       return true;
     };
+  }
+
+  /// 릴리스 빌드 최초 1회 — Crashlytics 대시보드 연결 확인용 (비치명적).
+  static Future<void> sendConnectivitySmokeTestOnce(SharedPreferences prefs) async {
+    if (kDebugMode || !_firebaseReady) return;
+    const key = 'crashlytics_smoke_sent';
+    if (prefs.getBool(key) == true) return;
+
+    log('MemoryOS Crashlytics smoke test');
+    await recordError(
+      StateError('Crashlytics connectivity smoke test'),
+      StackTrace.current,
+      fatal: false,
+      reason: 'smoke_test',
+    );
+    await prefs.setBool(key, true);
   }
 
   static Future<void> recordError(
