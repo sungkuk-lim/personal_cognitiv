@@ -1,13 +1,28 @@
 # GitHub Pages — 개인정보 처리방침 공개
 
-## 1. GitHub 로그인 (최초 1회)
+## 1. GitHub CLI (gh) 준비
+
+설치 후 `gh` 명령이 안 되면 **PowerShell을 새로 열거나** 아래 실행:
 
 ```powershell
-gh auth login
-# GitHub.com → HTTPS → 브라우저 로그인
+. .\scripts\use_gh.ps1
 ```
 
-## 2. 저장소 생성 및 푸시
+또는 전체 경로:
+
+```powershell
+& "C:\Program Files\GitHub CLI\gh.exe" auth login
+```
+
+## 2. GitHub 로그인 (최초 1회)
+
+```powershell
+. .\scripts\use_gh.ps1
+gh auth login
+# GitHub.com → HTTPS → Login with a web browser
+```
+
+## 3. 저장소 생성 및 푸시
 
 ```powershell
 cd d:\android\personal_cognitiv
