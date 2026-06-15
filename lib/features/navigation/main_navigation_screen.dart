@@ -511,8 +511,9 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         if (saved != null && type == 'image' && imageBytesForThumbnail != null) {
           await persistMemoryThumbnail(ref: ref, memoryId: saved.id, jpegBytes: imageBytesForThumbnail);
         }
-        if (saved != null) HapticFeedback.lightImpact();
-        else if (mounted && saved == null) {
+        if (saved != null) {
+          HapticFeedback.lightImpact();
+        } else if (mounted && saved == null) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ref.read(translationsProvider)['save_failed']!)));
         }
         return;

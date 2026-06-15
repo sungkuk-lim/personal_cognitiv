@@ -114,7 +114,7 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: Text('${info.version} (${info.buildNumber})'),
             ),
             loading: () => const SizedBox.shrink(),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
           ),
           ListTile(
             leading: const Icon(Icons.privacy_tip_outlined),
