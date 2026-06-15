@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "736018937253",
+    "project_id": "memoryos-personal-cognitiv",
+    "storage_bucket": "memoryos-personal-cognitiv.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:736018937253:android:754a565bdd93fda868244c",
+        "android_client_info": {
+          "package_name": "com.theNext.personal_cognitive"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCIm7Qpo9OCGyE3UVtUKHo6Ssxk12LLAdo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

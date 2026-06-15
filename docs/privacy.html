@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MemoryOS 개인정보 처리방침</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; color: #222; }
+    h1 { font-size: 1.5rem; }
+    h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+    table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    th { background: #f5f5f5; }
+  </style>
+</head>
+<body>
+  <h1>MemoryOS 개인정보 처리방침</h1>
+  <p><strong>최종 업데이트:</strong> 2026년 6월</p>
+
+  <h2>1. 수집하는 정보</h2>
+  <table>
+    <tr><th>항목</th><th>목적</th><th>보관</th></tr>
+    <tr><td>이메일·비밀번호</td><td>계정 인증 (Supabase)</td><td>클라우드</td></tr>
+    <tr><td>음성·텍스트 기억</td><td>AI 분류·검색</td><td>클라우드 (게스트/프라이버시 모드 시 기기만)</td></tr>
+    <tr><td>사진 썸네일</td><td>타임라인 표시</td><td>기기 + 클라우드 Storage</td></tr>
+    <tr><td>위치(선택)</td><td>선제적 기억 소환</td><td>기억 데이터에 포함</td></tr>
+    <tr><td>마이크·카메라</td><td>기억 입력</td><td>처리 후 원본은 저장하지 않음 (썸네일만)</td></tr>
+  </table>
+
+  <h2>2. 제3자 제공</h2>
+  <ul>
+    <li><strong>Supabase</strong>: 인증·데이터베이스·파일 저장</li>
+    <li><strong>OpenAI</strong>: 기억 분류·검색·사진 분석 (Edge Function 경유, 프라이버시/게스트 모드 제외)</li>
+    <li><strong>Google Firebase</strong>: 앱 안정성(Crashlytics) 분석</li>
+  </ul>
+
+  <h2>3. 사용자 권리</h2>
+  <ul>
+    <li>설정에서 <strong>프라이버시 모드</strong>: 새 기억을 기기에만 저장</li>
+    <li><strong>게스트 모드</strong>: 로그인 없이 기기 전용 사용</li>
+    <li>계정 삭제: Supabase 대시보드 또는 문의</li>
+  </ul>
+
+  <h2>4. 보안</h2>
+  <ul>
+    <li>사용자별 Row Level Security(RLS)로 타인 기억 접근 차단</li>
+    <li>OpenAI API 키는 서버(Edge Function)에만 보관</li>
+  </ul>
+
+  <h2>5. 문의</h2>
+  <p>앱 개발자에게 이메일로 문의하세요.</p>
+</body>
+</html>

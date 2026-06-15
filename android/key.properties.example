@@ -1,0 +1,6 @@
+# Android 릴리스 서명 (이 파일을 key.properties 로 복사 후 값 입력)
+# create_keystore.ps1 기본 비밀번호: memoryos123 (배포 전 변경 권장)
+storePassword=memoryos123
+keyPassword=memoryos123
+keyAlias=memoryos
+storeFile=../keystore/memoryos-release.jks
