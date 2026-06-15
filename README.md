@@ -55,6 +55,15 @@ Console: https://console.firebase.google.com/project/memoryos-personal-cognitiv/
 
 ## Play Store 준비
 
-[docs/STORE_READINESS.md](docs/STORE_READINESS.md) · 개인정보 웹: [docs/privacy.html](docs/privacy.html)
+[docs/STORE_READINESS.md](docs/STORE_READINESS.md) · [GitHub Pages 배포](docs/GITHUB_PAGES.md)
+
+개인정보 처리방침: `docs/privacy.html` → Pages URL 예: `https://YOUR_USER.github.io/personal_cognitiv/privacy.html`
+
+## 릴리스 APK
+
+```powershell
+.\scripts\create_keystore.ps1   # 최초 1회 (keystore + key.properties)
+.\scripts\build_release.ps1   # → build/app/outputs/flutter-apk/app-release.apk
+```
 
 CI: `.github/workflows/flutter_ci.yml`

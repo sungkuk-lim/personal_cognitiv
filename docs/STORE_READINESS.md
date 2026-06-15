@@ -92,7 +92,10 @@ copy android\key.properties.example android\key.properties
 | 핵심 기능 | ~93% |
 | UX·안정성 | ~88% |
 | Firebase Crashlytics | **연동 완료** |
-| 스토어 준비 | ~82% |
+| 릴리스 APK 서명 | **완료** (`app-release.apk` 빌드됨) |
+| 개인정보 HTML | **준비 완료** (`docs/privacy.html`) |
+| GitHub Pages | **푸시·Pages 설정만 남음** ([GITHUB_PAGES.md](GITHUB_PAGES.md)) |
+| 스토어 준비 | ~86% |
 | **스토어 등록 권장** | **95% 도달 시** |
 
 남은 작업: Crashlytics 콘솔 활성화, 릴리스 서명·실기기 QA, 정책 URL 공개 호스팅, 스크린샷 5장
