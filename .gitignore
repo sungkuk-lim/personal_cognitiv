@@ -1,5 +1,10 @@
+# PDF 생성용 로컬 폰트 (Windows 맑은 고딕 복사본 등, 용량 큼)
+assets/fonts/*.ttf
+assets/fonts/*.otf
+
 # 로컬 비밀키 (Git에 올리지 마세요)
 secrets.local.json
+.env
 .env.local
 *.secrets.json
 android/key.properties

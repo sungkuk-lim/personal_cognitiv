@@ -48,14 +48,18 @@ git push -u origin main
 
 ```
 https://YOUR_USER.github.io/personal_cognitiv/privacy.html
+https://YOUR_USER.github.io/personal_cognitiv/user_guide.html
+https://YOUR_USER.github.io/personal_cognitiv/
 ```
 
-Play Console **개인정보 처리방침 URL**에 위 주소를 입력하세요.
+Play Console **개인정보 처리방침 URL**에 privacy 주소를 입력하세요.  
+앱 **환경설정 → 모담넷 이용 가이드 → 웹에서 보기**는 `user_guide.html` 주소를 사용합니다 (`lib/core/app_urls.dart`의 `USER_GUIDE_URL`로 변경 가능).
 
 ## 4. 로컬에서만 준비 (이미 완료)
 
 - `docs/privacy.html` — 정책 본문
-- `docs/index.html` — privacy.html 로 리다이렉트
+- `docs/user_guide.html` — 이용 가이드 (기능·관계망·환경설정)
+- `docs/index.html` — 가이드·개인정보 링크 허브
 - `docs/.nojekyll` — Jekyll 비활성화
 
 ## 5. 정책 수정 시

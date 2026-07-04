@@ -61,6 +61,21 @@ void main() {
     expect(store.loadAll().first.id, saved.id);
   });
 
+  test('isLocalOnlyMode respects guest and privacy flags', () async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    expect(isLocalOnlyMode(prefs), isFalse);
+    await writeGuestMode(prefs, true);
+    expect(isLocalOnlyMode(prefs), isTrue);
+    await writeGuestMode(prefs, false);
+    await writePrivacyLocalMode(prefs, true);
+    expect(isLocalOnlyMode(prefs), isTrue);
+    expect(
+      isLocalOnlyMode(prefs, privacyMode: false, guestMode: true),
+      isTrue,
+    );
+  });
+
   test('readPrivacyLocalMode and guest mode prefs', () async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();

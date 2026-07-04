@@ -1,10 +1,15 @@
 import 'dart:async';
 import 'dart:math' as math;
+
 import 'package:flutter/widgets.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../core/prefs.dart';
 import '../models/memory.dart';
+import '../utils/recall_anchor.dart';
+import '../utils/semantic_search.dart';
 import 'background_recall_worker.dart';
+import 'location_permission_service.dart';
 import 'notification_service.dart';
 
 const String _prefRecallCooldown = 'recall_cooldown_until';
@@ -23,6 +28,7 @@ class ProactiveRecallService with WidgetsBindingObserver {
   }
 
   void start() {
+    if (!readProactiveRecallEnabled(_prefs)) return;
     WidgetsBinding.instance.addObserver(this);
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(minutes: 15), (_) => checkNow());
@@ -37,33 +43,38 @@ class ProactiveRecallService with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!readProactiveRecallEnabled(_prefs)) return;
     if (state == AppLifecycleState.resumed) {
       checkNow();
+    } else if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      BackgroundRecallWorker.saveMemorySnapshot(_prefs, _memories);
+      BackgroundRecallWorker.scheduleImmediateCheck();
     }
   }
 
-  Future<void> checkNow() async {
-    if (_checking || _memories.isEmpty) return;
+  Future<void> checkNow({bool background = false}) async {
+    if (_checking || _memories.isEmpty || !readProactiveRecallEnabled(_prefs)) return;
     final cooldown = _prefs.getInt(_prefRecallCooldown) ?? 0;
     if (DateTime.now().millisecondsSinceEpoch < cooldown) return;
 
     _checking = true;
     try {
-      final permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        await Geolocator.requestPermission();
-      }
-      if (!await Geolocator.isLocationServiceEnabled()) return;
-
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
-      );
+      final position = background
+          ? await LocationPermissionService.getPositionForRecallInBackground()
+          : await LocationPermissionService.getCurrentPositionIfAllowed();
+      if (position == null) return;
 
       Memory? nearest;
       var nearestDistance = double.infinity;
       for (final memory in _memories) {
-        if (memory.lat == null || memory.lng == null) continue;
-        final d = _distanceMeters(position.latitude, position.longitude, memory.lat!, memory.lng!);
+        final coords = effectiveRecallCoordinates(memory);
+        if (coords == null) continue;
+        final d = _distanceMeters(
+          position.latitude,
+          position.longitude,
+          coords.lat,
+          coords.lng,
+        );
         if (d <= _recallRadiusMeters && d < nearestDistance) {
           nearest = memory;
           nearestDistance = d;
@@ -72,10 +83,14 @@ class ProactiveRecallService with WidgetsBindingObserver {
 
       if (nearest == null) return;
 
+      final localeCode = readLanguageCode(_prefs);
+      final body = nearest.summary.isNotEmpty ? nearest.summary : nearest.content;
       await NotificationService.instance.showRecall(
         id: nearest.id.hashCode,
-        title: '기억이 소환되었습니다',
-        body: nearest.summary.isNotEmpty ? nearest.summary : nearest.content,
+        title: recallNotificationTitle(localeCode),
+        body: body.length > 120 ? '${body.substring(0, 117)}...' : body,
+        memoryId: nearest.id,
+        localeCode: localeCode,
       );
       await _prefs.setInt(
         _prefRecallCooldown,

@@ -6,6 +6,45 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+type QuotaAction = "chat" | "embedding" | "vision";
+
+function quotaActionFor(action: string): QuotaAction | null {
+  if (action === "chat") return "chat";
+  if (action === "embedding") return "embedding";
+  if (action === "vision") return "vision";
+  return null;
+}
+
+async function ensureQuota(
+  supabase: ReturnType<typeof createClient>,
+  action: string,
+): Promise<Response | null> {
+  const quotaAction = quotaActionFor(action);
+  if (!quotaAction) return null;
+
+  const { data, error } = await supabase.rpc("consume_ai_quota", {
+    p_action: quotaAction,
+  });
+
+  if (error) {
+    return new Response(JSON.stringify({ error: error.message, code: "quota_check_failed" }), {
+      status: 500,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const result = data as { allowed?: boolean; code?: string };
+  if (!result?.allowed) {
+    const status = result.code === "quota_exceeded" ? 429 : 402;
+    return new Response(JSON.stringify({ ...result, error: result.code }), {
+      status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  return null;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -20,7 +59,7 @@ serve(async (req) => {
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      return new Response(JSON.stringify({ error: "Unauthorized", code: "unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -36,6 +75,9 @@ serve(async (req) => {
 
     const body = await req.json();
     const action = body.action as string;
+
+    const quotaBlock = await ensureQuota(supabase, action);
+    if (quotaBlock) return quotaBlock;
 
     if (action === "embedding") {
       const res = await fetch("https://api.openai.com/v1/embeddings", {

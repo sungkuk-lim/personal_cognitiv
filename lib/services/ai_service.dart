@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/crash_reporting.dart';
 import '../core/env.dart';
+import 'subscription_exceptions.dart';
 
 /// OpenAI 호출을 Edge Function으로 우선 라우팅해 키 노출·남용을 줄입니다.
 class AiService {
@@ -11,17 +12,43 @@ class AiService {
   static final AiService instance = AiService._();
 
   Future<Map<String, dynamic>> _invokeEdge(String action, Map<String, dynamic> payload) async {
-    final response = await Supabase.instance.client.functions.invoke(
-      'openai-proxy',
-      body: {'action': action, ...payload},
-    );
-    if (response.data == null) {
-      throw Exception('Edge function returned empty data');
+    try {
+      final response = await Supabase.instance.client.functions.invoke(
+        'openai-proxy',
+        body: {'action': action, ...payload},
+      );
+      if (response.data == null) {
+        throw Exception('Edge function returned empty data');
+      }
+      if (response.data is Map<String, dynamic>) {
+        return response.data as Map<String, dynamic>;
+      }
+      return jsonDecode(jsonEncode(response.data)) as Map<String, dynamic>;
+    } on FunctionException catch (e) {
+      _throwIfSubscriptionError(e);
+      rethrow;
     }
-    if (response.data is Map<String, dynamic>) {
-      return response.data as Map<String, dynamic>;
+  }
+
+  void _throwIfSubscriptionError(FunctionException e) {
+    final details = e.details;
+    Map<String, dynamic>? map;
+    if (details is Map<String, dynamic>) {
+      map = details;
+    } else if (details is Map) {
+      map = Map<String, dynamic>.from(details);
     }
-    return jsonDecode(jsonEncode(response.data)) as Map<String, dynamic>;
+    final code = map?['code'] as String? ?? map?['error'] as String?;
+    if (e.status == 402 || code == 'subscription_required') {
+      throw SubscriptionRequiredException();
+    }
+    if (e.status == 429 || code == 'quota_exceeded') {
+      throw QuotaExceededException(
+        action: map?['action'] as String?,
+        limit: map?['limit'] as int?,
+        used: map?['used'] as int?,
+      );
+    }
   }
 
   Future<Map<String, dynamic>> _postOpenAiDirect(Map<String, dynamic> body) async {

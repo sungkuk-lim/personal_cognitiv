@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="모담넷(MemoryOS) 이용 가이드 — 기능, 관계망 차별화, 환경설정" />
+  <title>모담넷(MemoryOS) 이용 가이드</title>
+  <style>
+    :root {
+      --bg: #0f0d18;
+      --surface: #1a1628;
+      --card: #221e32;
+      --accent: #7c4dff;
+      --accent2: #00e5ff;
+      --text: #f5f5f7;
+      --muted: #a8a3b8;
+      --border: rgba(255,255,255,.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+      background: linear-gradient(160deg, #1e1240 0%, var(--bg) 45%, #0a0818 100%);
+      color: var(--text);
+      line-height: 1.65;
+      margin: 0;
+      padding: 0;
+    }
+    .hero {
+      padding: 2.5rem 1.25rem 2rem;
+      text-align: center;
+      background: radial-gradient(ellipse at 50% 0%, rgba(124,77,255,.25), transparent 60%);
+    }
+    .hero h1 {
+      font-size: 1.75rem;
+      font-weight: 800;
+      margin: 0 0 .5rem;
+      letter-spacing: -.02em;
+    }
+    .hero .tagline { color: var(--muted); font-size: .95rem; margin: 0; }
+    .hero .badge {
+      display: inline-block;
+      margin-top: 1rem;
+      padding: .35rem .85rem;
+      border-radius: 999px;
+      background: rgba(124,77,255,.2);
+      border: 1px solid rgba(124,77,255,.4);
+      font-size: .75rem;
+      color: #c4b5fd;
+    }
+    nav.top {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+      justify-content: center;
+      padding: 0 1rem 1.5rem;
+    }
+    nav.top a {
+      color: var(--accent2);
+      text-decoration: none;
+      font-size: .8rem;
+      padding: .4rem .75rem;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+    nav.top a:hover { background: var(--card); }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 0 1.25rem 3rem;
+    }
+    section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1.25rem;
+    }
+    h2 {
+      font-size: 1.15rem;
+      margin: 0 0 .85rem;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    h2::before {
+      content: "";
+      width: 4px;
+      height: 1.1em;
+      background: linear-gradient(180deg, var(--accent), var(--accent2));
+      border-radius: 2px;
+    }
+    h3 { font-size: .95rem; color: #ddd; margin: 1.1rem 0 .5rem; }
+    p, li { font-size: .9rem; color: #d8d4e3; }
+    ul { padding-left: 1.2rem; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .82rem;
+      margin: .75rem 0;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: .55rem .65rem;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: var(--card); color: #c4b5fd; font-weight: 600; }
+    .compare-win { color: #81c784; font-weight: 600; }
+    .tip {
+      background: rgba(0,229,255,.08);
+      border-left: 3px solid var(--accent2);
+      padding: .75rem 1rem;
+      border-radius: 0 8px 8px 0;
+      margin: .75rem 0;
+      font-size: .85rem;
+    }
+    footer {
+      text-align: center;
+      padding: 2rem 1rem;
+      color: var(--muted);
+      font-size: .8rem;
+      border-top: 1px solid var(--border);
+    }
+    footer a { color: var(--accent2); }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>모담넷(MemoryOS)<br>이용 가이드</h1>
+    <p class="tagline">기억을 쌓고, 연결하고, 다시 떠올리는 방법</p>
+    <span class="badge">버전 1.0 · 2026년 7월</span>
+  </header>
+
+  <nav class="top">
+    <a href="#about">소개</a>
+    <a href="#graph">관계망 차별화</a>
+    <a href="#features">기능·활용</a>
+    <a href="#settings">환경설정</a>
+    <a href="#scenarios">시나리오</a>
+    <a href="privacy.html">개인정보 처리방침</a>
+  </nav>
+
+  <main>
+    <section id="about">
+      <h2>1. 모담넷이란?</h2>
+      <p>음성·사진·텍스트로 남긴 <strong>기억</strong>을 타임라인에 쌓고, <strong>관계망</strong>으로 사람·장소·사건을 연결해 다시 찾아주는 개인 기억 앱입니다.</p>
+      <ul>
+        <li><strong>기억 저장</strong> — 말하기, 사진, 메모, 위치</li>
+        <li><strong>의미 검색</strong> — 자연어 질문 (Pro·클라우드)</li>
+        <li><strong>관계망</strong> — 인물·장소·감정·이벤트 그래프</li>
+        <li><strong>회상</strong> — 월별 갤러리, 장소 알림</li>
+        <li><strong>프라이버시</strong> — 기기 전용 저장 모드</li>
+      </ul>
+    </section>
+
+    <section id="graph">
+      <h2>2. 다른 앱과 다른 관계망</h2>
+      <p>일반 메모·일기 앱은 <strong>시간순 목록</strong>이 중심입니다. 모담넷은 <strong>「무엇이 서로 연결되는가」</strong>를 먼저 보여 줍니다.</p>
+      <table>
+        <tr><th>비교</th><th>일반 앱</th><th>모담넷</th></tr>
+        <tr><td>구조</td><td>폴더·태그·날짜</td><td class="compare-win">사람·장소·이벤트 허브 + 위성</td></tr>
+        <tr><td>연결</td><td>수동 태그</td><td class="compare-win">본문·AI 자동 추출, 편집 후 재정렬</td></tr>
+        <tr><td>탐색</td><td>검색어 일치</td><td class="compare-win">키워드 포커스 서브그래프</td></tr>
+        <tr><td>묶음</td><td>앨범·캘린더</td><td class="compare-win">사건 허브, 클러스터 간 황금 브리지</td></tr>
+        <tr><td>회상</td><td>없음</td><td class="compare-win">GPS 250m 이내 푸시 알림</td></tr>
+        <tr><td>신뢰</td><td>태그=사용자 책임</td><td class="compare-win">배지·노드·본문 단일 진실, 옛 이름 제거</td></tr>
+      </table>
+      <div class="tip">편집 후에도 관계망이 본문과 맞게 유지됩니다 — 예: 「철수」→「민수」 수정 시 옛 노드가 사라집니다.</div>
+    </section>
+
+    <section id="features">
+      <h2>3. 핵심 기능과 활용법</h2>
+
+      <h3>타임라인</h3>
+      <ul>
+        <li><strong>마이크</strong> — 음성·키보드 → 분석 및 저장</li>
+        <li><strong>카메라</strong> — 사진 + 메모, 한 카드에 여러 장</li>
+        <li>카드 탭 → 상세·편집·미디어 관리</li>
+      </ul>
+
+      <h3>검색</h3>
+      <table>
+        <tr><th>모드</th><th>조건</th><th>예시</th></tr>
+        <tr><td>AI 의미 검색</td><td>로그인 + Pro</td><td>「민수랑 먹었던 식당」</td></tr>
+        <tr><td>로컬 검색</td><td>게스트·프라이버시</td><td>「월영교」「6월」</td></tr>
+      </table>
+
+      <h3>관계망</h3>
+      <ul>
+        <li>핀치·드래그, 기간 칩(7/30/90일), 엔티티 검색</li>
+        <li>타임라인 <strong>키워드 칩</strong> → 포커스 모드</li>
+        <li>보라=AI 유사도, 녹=관계, 황금=클러스터 브리지</li>
+      </ul>
+
+      <h3>회상 · 위젯</h3>
+      <ul>
+        <li>월별 사진·요약, 회상 보기 모드(설정)</li>
+        <li>홈 위젯 — 기억 저장·검색·관계망 바로가기</li>
+      </ul>
+    </section>
+
+    <section id="settings">
+      <h2>4. 환경설정 가이드</h2>
+      <p>앱 상단 <strong>톱니 → 설정</strong></p>
+
+      <h3>회상 알림 (중요)</h3>
+      <ol>
+        <li>「장소 기반 회상 알림」 ON + 알림 권한</li>
+        <li>위치 권한 → 시스템에서 <strong>항상 허용</strong></li>
+        <li>기억 저장 시 GPS 허용</li>
+        <li>배터리 최적화 해제(삼성·샤오미 등)</li>
+      </ol>
+
+      <h3>사진 인식(OCR)</h3>
+      <table>
+        <tr><th>모드</th><th>설명</th></tr>
+        <tr><td>하이브리드</td><td>추천 — AI + 선택적 기기 OCR</td></tr>
+        <tr><td>저비용</td><td>AI 해상도 낮춤, 한도 절약</td></tr>
+        <tr><td>AI 전용</td><td>가장 풍부한 분석</td></tr>
+      </table>
+
+      <h3>관계망 · 프라이버시</h3>
+      <ul>
+        <li><strong>관계망 AI</strong> — Pro·로그인 시 백그라운드 분석</li>
+        <li><strong>관계망 데이터 정리</strong> — 캐시·중복 정리</li>
+        <li><strong>프라이버시 모드</strong> — 기기만 저장</li>
+        <li><strong>테마·언어·회상 모드</strong> — 개인화</li>
+      </ul>
+    </section>
+
+    <section id="scenarios">
+      <h2>5. 추천 시나리오</h2>
+      <h3>일상</h3>
+      <p>마이크 30초 → 타임라인 칩 확인 → 관계망 위성 확인</p>
+      <h3>여행</h3>
+      <p>사진+메모 → 회상 월별 보기 → 같은 장소 재방문 시 알림</p>
+      <h3>사람 중심</h3>
+      <p>이름 칩 탭 → 관계망 포커스 → 노드 AI 대화(Pro)</p>
+
+      <h3>문제 해결</h3>
+      <table>
+        <tr><th>증상</th><th>해결</th></tr>
+        <tr><td>알림 없음</td><td>위치 항상 허용, 배터리 최적화 해제</td></tr>
+        <tr><td>옛 이름 노드</td><td>앱 재시작 또는 관계망 데이터 정리</td></tr>
+        <tr><td>검색 없음</td><td>프라이버시 모드면 카드 단어로 검색</td></tr>
+      </table>
+    </section>
+  </main>
+
+  <footer>
+    <p>문의: <a href="mailto:imsk0126@gmail.com">imsk0126@gmail.com</a></p>
+    <p><a href="privacy.html">개인정보 처리방침</a> · © 2026 모담넷(MemoryOS)</p>
+  </footer>
+</body>
+</html>

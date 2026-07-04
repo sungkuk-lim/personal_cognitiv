@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_label">모담넷 기억 위젯</string>
+    <string name="widget_empty">마이크로 첫 기억을 남겨 보세요</string>
+    <string name="widget_default_title">모담넷</string>
+    <string name="widget_default_count">0개 기억</string>
+    <string name="widget_mic">기억 저장</string>
+    <string name="widget_search">검색</string>
+    <string name="widget_graph">관계망</string>
+    <string name="widget_pulse_label">최신 기억</string>
+</resources>

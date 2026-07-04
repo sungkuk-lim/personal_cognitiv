@@ -27,7 +27,8 @@ MemoryOS는 폴더와 태그 없이도 기억을 쌓고, 필요할 때 자연어
 • 클라우드 동기화는 로그인 후 선택 사용
 
 ■ 요금
-앱 무료 · OpenAI/클라우드 사용량은 본인 계정 기준
+앱 무료 · MemoryOS Pro(월/연 구독): 클라우드 동기화·AI 검색·사진 분석·관계망 AI
+무료: 기기 저장·로컬 검색·장소 회상 알림
 
 개발: theNext
 ```
@@ -90,12 +91,14 @@ copy android\key.properties.example android\key.properties
 | 항목 | 상태 |
 |------|------|
 | 핵심 기능 | ~93% |
-| UX·안정성 | ~88% |
+| UX·안정성 | ~92% |
 | Firebase Crashlytics | **연동 완료** |
 | 릴리스 APK 서명 | **완료** (`app-release.apk` 빌드됨) |
-| 개인정보 HTML | **준비 완료** (`docs/privacy.html`) |
-| GitHub Pages | **푸시·Pages 설정만 남음** ([GITHUB_PAGES.md](GITHUB_PAGES.md)) |
-| 스토어 준비 | ~86% |
-| **스토어 등록 권장** | **95% 도달 시** |
+| 개인정보·이용 가이드 HTML | **준비 완료** (`docs/privacy.html`, `docs/user_guide.html`) |
+| GitHub Pages | **`scripts/deploy_github_pages.ps1` 실행 후 push** |
+| 무료 연관 기억(로컬 Thread) | **추가됨** |
+| 관계망 소규모 자동 펼침 | **추가됨** |
+| 스토어 준비 | ~93% |
+| **스토어 등록 권장** | **QA P0 실기기 + Pages URL 공개 후** |
 
 남은 작업: Crashlytics 콘솔 활성화, 릴리스 서명·실기기 QA, 정책 URL 공개 호스팅, 스크린샷 5장

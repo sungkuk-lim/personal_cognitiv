@@ -35,6 +35,17 @@ $defines = @(
     "--dart-define=USE_EDGE_PROXY=true"
 )
 
+if ($secrets.AI_OMAKASE_API_KEY) {
+    $defines += "--dart-define=AI_OMAKASE_API_KEY=$($secrets.AI_OMAKASE_API_KEY)"
+    Write-Host "Using AI_OMAKASE_API_KEY for cloud STT" -ForegroundColor DarkGray
+}
+if ($secrets.AI_OMAKASE_STT_URL) {
+    $defines += "--dart-define=AI_OMAKASE_STT_URL=$($secrets.AI_OMAKASE_STT_URL)"
+}
+if ($secrets.AI_OMAKASE_STT_MODEL) {
+    $defines += "--dart-define=AI_OMAKASE_STT_MODEL=$($secrets.AI_OMAKASE_STT_MODEL)"
+}
+
 if ($Release) {
     Write-Host "Release APK 빌드 중..." -ForegroundColor Cyan
     flutter build apk --release @defines

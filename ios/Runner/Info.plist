@@ -67,12 +67,23 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSCameraUsageDescription</key>
-	<string>MemoryOS needs access to the camera for OCR and capturing visual memories.</string>
+	<string>모담넷이 사진·OCR로 기억을 저장하기 위해 카메라 접근이 필요합니다.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>MemoryOS needs access to the microphone for capturing voice memories.</string>
+	<string>모담넷이 음성으로 기억을 남기기 위해 마이크 접근이 필요합니다.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>MemoryOS needs access to your location to contextualize your memories.</string>
+	<string>모담넷이 기억에 장소를 붙이기 위해 위치 접근이 필요합니다.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>모담넷이 예전에 기록한 장소에 다시 갔을 때 기억을 알려주기 위해 백그라운드 위치가 필요합니다.</string>
+	<key>NSUserNotificationsUsageDescription</key>
+	<string>모담넷이 회상 알림과 오늘의 기억 펄스를 보내기 위해 알림 권한이 필요합니다.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+		<string>fetch</string>
+	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>MemoryOS needs access to your photo library to save and process captured memories.</string>
+	<string>모담넷이 사진 기억을 저장·불러오기 위해 사진 라이브러리 접근이 필요합니다.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>모담넷이 관계망 사람 노드에 연락처 사진을 표시하기 위해 연락처 접근이 필요합니다(설정에서 켤 때).</string>
 </dict>
 </plist>

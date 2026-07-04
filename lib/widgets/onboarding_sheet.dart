@@ -15,24 +15,34 @@ Future<void> showOnboardingIfNeeded(BuildContext context, WidgetRef ref) async {
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-    builder: (ctx) => Padding(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(t['onboarding_title']!, style: Theme.of(ctx).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 20),
-          _row(ctx, Icons.mic_rounded, t['onboarding_mic']!),
-          _row(ctx, Icons.camera_alt_rounded, t['onboarding_camera']!),
-          _row(ctx, Icons.search_rounded, t['onboarding_search']!),
-          _row(ctx, Icons.location_on_outlined, t['onboarding_recall']!),
-          const SizedBox(height: 24),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: Text(t['got_it']!)),
+    builder: (ctx) => SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          24,
+          24,
+          24,
+          24 + MediaQuery.of(ctx).padding.bottom,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(t['onboarding_title']!, style: Theme.of(ctx).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 20),
+              _row(ctx, Icons.mic_rounded, t['onboarding_mic']!),
+              _row(ctx, Icons.camera_alt_rounded, t['onboarding_camera']!),
+              _row(ctx, Icons.search_rounded, t['onboarding_search']!),
+              _row(ctx, Icons.hub_outlined, t['onboarding_graph']!),
+              _row(ctx, Icons.location_on_outlined, t['onboarding_recall']!),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: Text(t['got_it']!)),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     ),
   );

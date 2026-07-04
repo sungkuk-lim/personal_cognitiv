@@ -14,8 +14,48 @@ if (-not (Test-Path $keyProps)) {
     exit 1
 }
 
-Write-Host "==> 릴리스 APK 빌드" -ForegroundColor Cyan
-flutter build apk --release
+Write-Host "==> Release APK build" -ForegroundColor Cyan
+
+Write-Host "==> User guide PDF" -ForegroundColor Cyan
+& (Join-Path $root "scripts\setup_guide_font.ps1")
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+dart run scripts/generate_user_guide_pdf.dart
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+$defines = @()
+$secretsPath = Join-Path $root "secrets.local.json"
+if (Test-Path $secretsPath) {
+    $secrets = Get-Content $secretsPath -Raw | ConvertFrom-Json
+    if ($secrets.SUPABASE_URL -and $secrets.SUPABASE_ANON_KEY) {
+        $defines = @(
+            "--dart-define=SUPABASE_URL=$($secrets.SUPABASE_URL)",
+            "--dart-define=SUPABASE_ANON_KEY=$($secrets.SUPABASE_ANON_KEY)",
+            "--dart-define=USE_EDGE_PROXY=true"
+        )
+        Write-Host "Using secrets.local.json for Supabase" -ForegroundColor DarkGray
+    }
+    if ($secrets.REVENUECAT_ANDROID_KEY) {
+        $defines += "--dart-define=REVENUECAT_ANDROID_KEY=$($secrets.REVENUECAT_ANDROID_KEY)"
+        Write-Host "Using RevenueCat Android key" -ForegroundColor DarkGray
+    }
+    if ($secrets.REVENUECAT_IOS_KEY) {
+        $defines += "--dart-define=REVENUECAT_IOS_KEY=$($secrets.REVENUECAT_IOS_KEY)"
+    }
+    if ($secrets.AI_OMAKASE_API_KEY) {
+        $defines += "--dart-define=AI_OMAKASE_API_KEY=$($secrets.AI_OMAKASE_API_KEY)"
+        Write-Host "Using AI_OMAKASE_API_KEY for cloud STT" -ForegroundColor DarkGray
+    }
+    if ($secrets.AI_OMAKASE_STT_URL) {
+        $defines += "--dart-define=AI_OMAKASE_STT_URL=$($secrets.AI_OMAKASE_STT_URL)"
+    }
+    if ($secrets.AI_OMAKASE_STT_MODEL) {
+        $defines += "--dart-define=AI_OMAKASE_STT_MODEL=$($secrets.AI_OMAKASE_STT_MODEL)"
+    }
+} else {
+    Write-Host "No secrets.local.json — guest/local save still works; cloud/AI needs keys" -ForegroundColor Yellow
+}
+
+flutter build apk --release @defines
 
 if ($LASTEXITCODE -eq 0) {
     $apk = "build\app\outputs\flutter-apk\app-release.apk"

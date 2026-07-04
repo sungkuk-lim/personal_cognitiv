@@ -14,4 +14,11 @@ void main() {
     expect(result, contains('제주도'));
     expect(result.any((e) => e.contains('추출')), isFalse);
   });
+
+  test('isLikelyLotNumber detects lot number patterns', () {
+    expect(isLikelyLotNumber('33-21'), isTrue);
+    expect(isLikelyLotNumber('101-3-12'), isTrue);
+    expect(isLikelyLotNumber('월영교'), isFalse);
+    expect(isLikelyLotNumber('광안리 33-21'), isFalse);
+  });
 }

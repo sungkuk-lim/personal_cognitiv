@@ -8,11 +8,11 @@ OcrVisionQuality effectiveVisionQuality(OcrEngineMode engineMode, OcrVisionQuali
 }
 
 int ocrMaxSideFor(OcrEngineMode engineMode, OcrVisionQuality quality) {
-  if (engineMode == OcrEngineMode.lowCost) return 512;
-  return quality == OcrVisionQuality.high ? 1024 : 768;
+  if (engineMode == OcrEngineMode.lowCost) return 448;
+  return quality == OcrVisionQuality.high ? 896 : 640;
 }
 
 int cameraPickMaxSideFor(OcrEngineMode engineMode, OcrVisionQuality quality) {
-  if (engineMode == OcrEngineMode.lowCost) return 1024;
-  return quality == OcrVisionQuality.high ? 1600 : 1280;
+  if (engineMode == OcrEngineMode.lowCost) return 960;
+  return quality == OcrVisionQuality.high ? 1280 : 1024;
 }

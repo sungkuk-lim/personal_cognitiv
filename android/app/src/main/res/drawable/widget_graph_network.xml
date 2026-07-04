@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="200dp"
+    android:height="140dp"
+    android:viewportWidth="200"
+    android:viewportHeight="140">
+
+  <!-- 관계망 엣지 -->
+  <path
+      android:pathData="M100,52 L42,28 L18,72 L58,108 L118,96 L162,58 L100,52 Z"
+      android:strokeColor="#4D7C4DFF"
+      android:strokeWidth="1.2"
+      android:fillColor="#00000000" />
+  <path
+      android:pathData="M100,52 L162,28 L178,88"
+      android:strokeColor="#33E91E63"
+      android:strokeWidth="1"
+      android:fillColor="#00000000" />
+  <path
+      android:pathData="M58,108 L28,118 L42,28"
+      android:strokeColor="#3300897B"
+      android:strokeWidth="1"
+      android:fillColor="#00000000" />
+  <path
+      android:pathData="M118,96 L162,58 L162,28"
+      android:strokeColor="#33FFFFFF"
+      android:strokeWidth="0.8"
+      android:fillColor="#00000000" />
+
+  <!-- 허브 노드 -->
+  <path
+      android:pathData="M100,52 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0"
+      android:fillColor="#805C6BC0" />
+  <path
+      android:pathData="M100,52 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"
+      android:fillColor="#FF7C4DFF" />
+
+  <!-- 위성 노드 -->
+  <path
+      android:pathData="M42,28 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"
+      android:fillColor="#CCE91E63" />
+  <path
+      android:pathData="M162,28 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
+      android:fillColor="#CC00BCD4" />
+  <path
+      android:pathData="M18,72 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
+      android:fillColor="#CC00897B" />
+  <path
+      android:pathData="M58,108 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
+      android:fillColor="#CCFFB300" />
+  <path
+      android:pathData="M118,96 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
+      android:fillColor="#CC5C6BC0" />
+  <path
+      android:pathData="M162,58 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"
+      android:fillColor="#99FFFFFF" />
+  <path
+      android:pathData="M178,88 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"
+      android:fillColor="#99B388FF" />
+
+  <!-- 글로우 링 -->
+  <path
+      android:pathData="M100,52 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0"
+      android:strokeColor="#337C4DFF"
+      android:strokeWidth="1.5"
+      android:fillColor="#00000000" />
+</vector>

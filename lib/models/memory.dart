@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../utils/embedding_utils.dart';
+
 class Memory {
   final String id;
   final String content;
@@ -12,8 +14,13 @@ class Memory {
   final List<double>? embedding;
   final double? lat;
   final double? lng;
+  final double? recallLat;
+  final double? recallLng;
+  final String? recallPlaceLabel;
+  final bool recallEnabled;
   final String? userId;
   final bool isLocalOnly;
+  final String userMemo;
 
   Memory({
     required this.id,
@@ -27,8 +34,13 @@ class Memory {
     this.embedding,
     this.lat,
     this.lng,
+    this.recallLat,
+    this.recallLng,
+    this.recallPlaceLabel,
+    this.recallEnabled = true,
     this.userId,
     this.isLocalOnly = false,
+    this.userMemo = "",
   });
 
   factory Memory.fromMap(Map<String, dynamic> map) {
@@ -43,26 +55,55 @@ class Memory {
       subCategory: map['sub_category'] ?? "",
       lat: map['lat']?.toDouble(),
       lng: map['lng']?.toDouble(),
+      recallLat: map['recall_lat']?.toDouble(),
+      recallLng: map['recall_lng']?.toDouble(),
+      recallPlaceLabel: map['recall_place_label'] as String?,
+      recallEnabled: map['recall_enabled'] != false,
       userId: map['user_id']?.toString(),
       isLocalOnly: map['is_local_only'] == true,
+      embedding: parseEmbedding(map['embedding']),
+      userMemo: (map['user_memo'] as String? ?? '').trim(),
     );
   }
 
-  Memory copyWith({bool? isLocalOnly, String? id}) {
+  Memory copyWith({
+    bool? isLocalOnly,
+    String? id,
+    String? content,
+    String? summary,
+    List<String>? entities,
+    DateTime? createdAt,
+    String? type,
+    String? category,
+    String? subCategory,
+    List<double>? embedding,
+    double? lat,
+    double? lng,
+    double? recallLat,
+    double? recallLng,
+    String? recallPlaceLabel,
+    bool? recallEnabled,
+    String? userMemo,
+  }) {
     return Memory(
       id: id ?? this.id,
-      content: content,
-      summary: summary,
-      entities: entities,
-      createdAt: createdAt,
-      type: type,
-      category: category,
-      subCategory: subCategory,
-      embedding: embedding,
-      lat: lat,
-      lng: lng,
+      content: content ?? this.content,
+      summary: summary ?? this.summary,
+      entities: entities ?? this.entities,
+      createdAt: createdAt ?? this.createdAt,
+      type: type ?? this.type,
+      category: category ?? this.category,
+      subCategory: subCategory ?? this.subCategory,
+      embedding: embedding ?? this.embedding,
+      lat: lat ?? this.lat,
+      lng: lng ?? this.lng,
+      recallLat: recallLat ?? this.recallLat,
+      recallLng: recallLng ?? this.recallLng,
+      recallPlaceLabel: recallPlaceLabel ?? this.recallPlaceLabel,
+      recallEnabled: recallEnabled ?? this.recallEnabled,
       userId: userId,
       isLocalOnly: isLocalOnly ?? this.isLocalOnly,
+      userMemo: userMemo ?? this.userMemo,
     );
   }
 
@@ -78,7 +119,14 @@ class Memory {
       'created_at': createdAt.toIso8601String(),
       'lat': lat,
       'lng': lng,
+      if (recallLat != null) 'recall_lat': recallLat,
+      if (recallLng != null) 'recall_lng': recallLng,
+      if (recallPlaceLabel != null && recallPlaceLabel!.trim().isNotEmpty)
+        'recall_place_label': recallPlaceLabel,
+      if (!recallEnabled) 'recall_enabled': false,
       'is_local_only': true,
+      if (userMemo.isNotEmpty) 'user_memo': userMemo,
+      if (embedding != null) 'embedding': embedding,
     };
   }
 
@@ -94,6 +142,12 @@ class Memory {
       'created_at': createdAt.toIso8601String(),
       'lat': lat,
       'lng': lng,
+      if (recallLat != null) 'recall_lat': recallLat,
+      if (recallLng != null) 'recall_lng': recallLng,
+      if (recallPlaceLabel != null && recallPlaceLabel!.trim().isNotEmpty)
+        'recall_place_label': recallPlaceLabel,
+      if (!recallEnabled) 'recall_enabled': false,
+      if (userMemo.isNotEmpty) 'user_memo': userMemo,
       'user_id': ?userId,
     };
   }
