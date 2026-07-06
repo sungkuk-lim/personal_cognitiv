@@ -531,6 +531,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
               ),
             ),
           ),
+          if (!landscapeImmersive) _GraphTrustHintBar(graphAiOn: false),
         ],
       );
     }
@@ -988,6 +989,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
                   ],
                 ),
         ),
+        if (!landscapeImmersive) _GraphTrustHintBar(graphAiOn: graphAiOn),
       ],
     );
   }
@@ -1773,6 +1775,56 @@ class _GraphLayoutCapBanner extends ConsumerWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 관계망 하단 신뢰 안내 — 네비게이션 바로 위, 그래프 제스처와 겹치지 않게 얇게 표시.
+class _GraphTrustHintBar extends ConsumerWidget {
+  const _GraphTrustHintBar({required this.graphAiOn});
+
+  final bool graphAiOn;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = ref.watch(translationsProvider);
+    final scheme = Theme.of(context).colorScheme;
+    final text = graphAiOn
+        ? '${t['graph_trust_hint']!} ${t['graph_trust_hint_ai_extra']!}'
+        : t['graph_trust_hint']!;
+    return Material(
+      color: scheme.surface.withValues(alpha: 0.92),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.35))),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(
+                graphAiOn ? Icons.auto_awesome_outlined : Icons.info_outline,
+                size: 14,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  text,
+                  maxLines: graphAiOn ? 2 : 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
+                        height: 1.35,
+                        fontSize: 11,
+                      ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
