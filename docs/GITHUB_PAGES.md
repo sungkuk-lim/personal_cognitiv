@@ -1,87 +1,59 @@
-# GitHub Pages — 모담넷 홈페이지·정책 공개
-
-**브랜드:** theNext_modamnet  
-**GitHub 조직/계정:** `theNext-modamnet` (GitHub 사용자명에는 `_` 불가 → **하이픈** 사용)
-
-**공개 URL (저장소 `theNext-modamnet/personal_cognitiv` 기준):**
-
-```
-https://thenext-modamnet.github.io/personal_cognitiv/
-https://thenext-modamnet.github.io/personal_cognitiv/privacy.html
-https://thenext-modamnet.github.io/personal_cognitiv/terms.html
-https://thenext-modamnet.github.io/personal_cognitiv/user_guide.html
-```
-
-앱 기본 URL: `lib/core/app_urls.dart` (동일 주소)
-
----
-
-## GitHub 조직 이전 (sungkuk-lim → theNext-modamnet)
-
-코드·문서 URL은 이미 `theNext-modamnet` 기준으로 맞춰 두었습니다. **실제 사이트가 열리려면** GitHub에서 아래를 진행하세요.
-
-1. https://github.com/organizations/plan → **Free** 조직 생성  
-   - Organization name: **`theNext-modamnet`** (표시 이름은 `theNext_modamnet` 가능)
-2. `sungkuk-lim/personal_cognitiv` → **Settings → General → Transfer ownership** → `theNext-modamnet` 조직으로 이전  
-   (또는 조직에 새로 push 후 Pages만 활성화)
-3. https://github.com/organizations/theNext-modamnet/settings/pages → **GitHub Actions** 소스 선택
-4. `main` push 후 Actions에서 `Deploy GitHub Pages` 성공 확인
-
-이전 전까지는 기존 `sungkuk-lim.github.io/...` URL도 동작할 수 있습니다. Play 등록은 **이전 완료 후** 새 URL을 사용하세요.
-
-### URL을 더 짧게 (선택)
-
-저장소 이름을 `theNext-modamnet.github.io`로 바꾸고 `docs/`를 루트에 두면:
-
-```
-https://thenext-modamnet.github.io/privacy.html
-```
-
----
-
-## 방법 A — GitHub Actions (권장)
-
-1. GitHub 저장소 → **Settings → Pages**
-2. **Build and deployment** → Source: **GitHub Actions**
-3. `docs/` 변경 후 `main` 브랜치에 push
-4. Actions 워크플로 `.github/workflows/pages.yml` 자동 배포
-
-```powershell
-cd d:\android\personal_cognitiv
-.\scripts\deploy_pages.ps1
-```
-
-배포 완료: **Actions** 탭에서 `Deploy GitHub Pages` 확인
-
----
-
-## 방법 B — 브랜치 배포 (수동)
-
-1. https://github.com/theNext-modamnet/personal_cognitiv/settings/pages
-2. Source: **Deploy from a branch**
-3. Branch: **main** / Folder: **/docs**
-4. Save
-
----
-
-## gh CLI (선택)
-
-```powershell
-. .\scripts\use_gh.ps1
-gh auth login
-```
-
-## 4. 로컬에서만 준비 (이미 완료)
-
-- `docs/privacy.html` — 정책 본문
-- `docs/user_guide.html` — 이용 가이드
-- `docs/index.html` — 랜딩·링크 허브
-- `docs/.nojekyll` — Jekyll 비활성화
-
-## 5. 정책 수정 시
-
-`docs/privacy.html` 수정 → commit → push → Pages 자동 갱신
-
-Play Console **개인정보처리방침 URL:**  
-`https://thenext-modamnet.github.io/personal_cognitiv/privacy.html`
-
+# GitHub Pages — 모담넷 홈페이지·정책 공개
+
+**브랜드:** theNext_modamnet  
+**GitHub 조직/계정 (목표):** `theNext-modamnet` (GitHub는 `_` 불가 → **하이픈**)
+
+---
+
+## 지금 바로 쓸 URL (조직 이전 전 · 동작 중)
+
+저장소가 아직 `sungkuk-lim` 계정에 있으므로 **Play Console·앱 배포는 아래 주소를 사용**하세요.
+
+```
+https://sungkuk-lim.github.io/personal_cognitiv/
+https://sungkuk-lim.github.io/personal_cognitiv/privacy.html
+https://sungkuk-lim.github.io/personal_cognitiv/terms.html
+https://sungkuk-lim.github.io/personal_cognitiv/user_guide.html
+```
+
+배포 방식: **Settings → Pages → Deploy from branch → main /docs** (이미 설정됨)
+
+---
+
+## 목표 URL (조직 이전 후)
+
+```
+https://thenext-modamnet.github.io/personal_cognitiv/
+https://thenext-modamnet.github.io/personal_cognitiv/privacy.html
+https://thenext-modamnet.github.io/personal_cognitiv/terms.html
+```
+
+앱 코드 기본값: `lib/core/app_urls.dart` (이전 완료 후 자동 일치)
+
+---
+
+## 나중에 할 일 — theNext-modamnet 조직 (본인 GitHub 로그인 필요)
+
+1. https://github.com/organizations/plan → Free 조직 **`theNext-modamnet`** 생성
+2. `personal_cognitiv` 저장소 → Settings → Transfer ownership → 조직으로 이전
+3. 조직 저장소 → Settings → Pages → branch `main` / folder `docs`
+4. Play Console URL을 `thenext-modamnet.github.io/...` 로 변경
+
+> Cursor/CI에서 조직 생성·이전은 **대신 할 수 없습니다** (본인 계정 인증 필요).
+
+---
+
+## CI / Pages 워크플로
+
+| 워크플로 | 역할 |
+|----------|------|
+| `flutter_ci.yml` | analyze + test (push 시) |
+| `pages.yml` | **수동만** (`workflow_dispatch`) — branch 배포와 충돌 방지 |
+
+`docs/` 수정 후 push하면 **branch Pages가 자동 갱신**됩니다. `pages.yml` Actions 배포는 조직 이전 후 필요 시 Settings에서 GitHub Actions 소스로 바꾼 뒤 수동 실행.
+
+---
+
+## 정책 수정 시
+
+`docs/privacy.html` · `terms.html` 수정 → commit → push → 1~2분 후 반영
