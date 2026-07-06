@@ -37,6 +37,46 @@ class SubscriptionService {
     });
   }
 
+  Future<SubscriptionStatus> refreshEntitlements() async {
+    if (!AppEnv.isConfigured) {
+      final free = SubscriptionStatus.free();
+      _listener?.call(free);
+      return free;
+    }
+
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      final free = SubscriptionStatus.free();
+      _listener?.call(free);
+      return free;
+    }
+
+    if (AppEnv.devProBypass) {
+      final dev = SubscriptionStatus(
+        tier: 'pro',
+        status: 'active',
+        productId: 'dev_bypass',
+      );
+      _listener?.call(dev);
+      return dev;
+    }
+
+    if (_configured) {
+      try {
+        final info = await Purchases.getCustomerInfo();
+        _applyRevenueCatInfo(info);
+        final active = info.entitlements.all[SubscriptionConfig.entitlementPro];
+        if (active?.isActive == true) {
+          return await refreshFromSupabase();
+        }
+      } catch (e) {
+        debugPrint('RevenueCat refresh failed: $e');
+      }
+    }
+
+    return refreshFromSupabase();
+  }
+
   Future<SubscriptionStatus> refreshFromSupabase() async {
     if (!AppEnv.isConfigured) {
       final free = SubscriptionStatus.free();

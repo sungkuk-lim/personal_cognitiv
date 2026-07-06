@@ -12,6 +12,6 @@ final hasProEntitlementProvider = Provider<bool>((ref) {
 });
 
 final subscriptionRefreshProvider = FutureProvider.autoDispose<void>((ref) async {
-  final status = await SubscriptionService.instance.refreshFromSupabase();
+  final status = await SubscriptionService.instance.refreshEntitlements();
   ref.read(subscriptionStatusProvider.notifier).state = status;
 });

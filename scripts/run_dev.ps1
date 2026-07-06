@@ -6,7 +6,9 @@
   옵션:   .\scripts\run_dev.ps1 -Release   (APK 빌드)
 #>
 param(
-    [switch]$Release
+    [switch]$Release,
+    [switch]$ProBypass,
+    [string]$Device = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,11 +37,24 @@ $defines = @(
     "--dart-define=USE_EDGE_PROXY=true"
 )
 
+if ($secrets.REVENUECAT_ANDROID_KEY) {
+    $defines += "--dart-define=REVENUECAT_ANDROID_KEY=$($secrets.REVENUECAT_ANDROID_KEY)"
+}
+
+if ($ProBypass) {
+    $defines += "--dart-define=DEV_PRO_BYPASS=true"
+    Write-Host "DEV_PRO_BYPASS=true (QA only)" -ForegroundColor Yellow
+}
+
 if ($Release) {
     Write-Host "Release APK 빌드 중..." -ForegroundColor Cyan
     flutter build apk --release @defines
     Write-Host "출력: build\app\outputs\flutter-apk\app-release.apk" -ForegroundColor Green
 } else {
     Write-Host "flutter run (Edge Proxy ON)..." -ForegroundColor Cyan
-    flutter run @defines
+    if ($Device) {
+        flutter run -d $Device @defines
+    } else {
+        flutter run @defines
+    }
 }

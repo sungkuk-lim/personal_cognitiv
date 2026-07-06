@@ -98,6 +98,33 @@ class _PaywallSheetState extends ConsumerState<_PaywallSheet> {
     }
   }
 
+  Future<void> _refreshEntitlements() async {
+    final t = ref.read(translationsProvider);
+    setState(() {
+      _purchasing = true;
+      _error = null;
+    });
+    try {
+      final refreshed = await SubscriptionService.instance.refreshEntitlements();
+      if (!mounted) return;
+      ref.read(subscriptionStatusProvider.notifier).state = refreshed;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            refreshed.isProActive ? t['sub_refresh_pro']! : t['sub_refresh_free']!,
+          ),
+        ),
+      );
+      if (refreshed.isProActive) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _error = t['pro_restore_error']!);
+      }
+    } finally {
+      if (mounted) setState(() => _purchasing = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = ref.watch(translationsProvider);
@@ -184,12 +211,7 @@ class _PaywallSheetState extends ConsumerState<_PaywallSheet> {
                       Text(t['pro_store_pending']!, style: const TextStyle(height: 1.45)),
                       const SizedBox(height: 12),
                       OutlinedButton(
-                        onPressed: () async {
-                          final refreshed = await SubscriptionService.instance.refreshFromSupabase();
-                          if (mounted) {
-                            ref.read(subscriptionStatusProvider.notifier).state = refreshed;
-                          }
-                        },
+                        onPressed: _purchasing ? null : _refreshEntitlements,
                         child: Text(t['pro_refresh_status']!),
                       ),
                     ],
@@ -225,12 +247,7 @@ class _PaywallSheetState extends ConsumerState<_PaywallSheet> {
               ),
             const SizedBox(height: 8),
             TextButton.icon(
-              onPressed: () async {
-                final refreshed = await SubscriptionService.instance.refreshFromSupabase();
-                if (mounted) {
-                  ref.read(subscriptionStatusProvider.notifier).state = refreshed;
-                }
-              },
+              onPressed: _purchasing ? null : _refreshEntitlements,
               icon: const Icon(Icons.refresh_rounded, size: 18),
               label: Text(t['pro_refresh_status']!),
             ),
