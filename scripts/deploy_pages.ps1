@@ -1,4 +1,4 @@
-# GitHub Pages 배포 (docs/ 폴더)
+# GitHub Pages 배포 (docs/ 폴더, branch 방식)
 # 사용: .\scripts\deploy_pages.ps1 [-Message "docs: update site"]
 
 param(
@@ -9,9 +9,7 @@ $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
 $paths = @(
-    "docs/",
-    ".github/workflows/pages.yml",
-    "lib/core/app_urls.dart"
+    "docs/"
 )
 
 Write-Host "Staging Pages-related files..."
@@ -29,7 +27,7 @@ git push origin HEAD
 Write-Host ""
 Write-Host "Done. Enable GitHub Pages:"
 Write-Host "  https://github.com/theNext-modamnet/personal_cognitiv/settings/pages"
-Write-Host "  Source: GitHub Actions"
+Write-Host "  Source: Deploy from branch → main /docs"
 Write-Host ""
 Write-Host "Site URL:"
 Write-Host "  https://thenext-modamnet.github.io/personal_cognitiv/"

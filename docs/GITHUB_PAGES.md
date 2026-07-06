@@ -48,9 +48,22 @@ https://thenext-modamnet.github.io/personal_cognitiv/terms.html
 | 워크플로 | 역할 |
 |----------|------|
 | `flutter_ci.yml` | analyze + test (push 시) |
-| `pages.yml` | **수동만** (`workflow_dispatch`) — branch 배포와 충돌 방지 |
 
-`docs/` 수정 후 push하면 **branch Pages가 자동 갱신**됩니다. `pages.yml` Actions 배포는 조직 이전 후 필요 시 Settings에서 GitHub Actions 소스로 바꾼 뒤 수동 실행.
+`docs/` 수정 후 push → **branch Pages**가 자동 갱신 (`main` / `docs`).
+
+### ⚠️ 「pages build and deployment」실패 메일이 왔을 때
+
+GitHub가 push마다 Pages를 빌드합니다. **deploy 단계만 실패**해도 메일이 옵니다.
+
+1. **사이트 확인** — 아래 URL이 열리면 **무시해도 됨** (이전 배포본 유지)  
+   https://sungkuk-lim.github.io/personal_cognitiv/privacy.html
+2. **Settings → Pages** 확인  
+   - Source: **Deploy from a branch** (GitHub Actions 아님)  
+   - Branch: `main` / Folder: **`/docs`**
+3. **Actions** 탭 → `pages build and deployment` → **Re-run failed jobs**
+4. 그래도 실패하면 Settings → Pages에서 Source를 다른 값으로 바꿨다가 다시 `main` / `docs`로 저장
+
+> 커스텀 `pages.yml` Actions 워크플로는 **제거함** (branch 배포와 충돌·실패 메일 방지).
 
 ---
 
