@@ -5,6 +5,7 @@ import 'graph_fragment_freshness.dart';
 import 'graph_meaning_extract.dart';
 import 'korean_person_names.dart';
 import 'memory_participation_extract.dart';
+import 'memory_semantic_extract.dart';
 import 'ocr_utils.dart';
 import 'photo_memory_format.dart';
 
@@ -25,11 +26,12 @@ const Set<String> kGraphMealCompanionTokens = {
 
 bool isGraphMealCompanionToken(String token) => kGraphMealCompanionTokens.contains(token.trim());
 
-/// 인물로 오인되는 직함·집합 명사.
+/// 인물로 오인되는 직함·집합 명사·카테고리 키워드.
 const Set<String> kBlockedPersonTokens = {
   '원직원들', '직원들', '병원직원들', '병원직원', '간호과장', '간호팀장', '간호사', '보호사',
   '참석자', '참석', '팀장', '과장', '원장', '부장', '이사', '대리', '사원',
   '여러가지', '이런저런', '모두', '전원', '직원',
+  '시험', '컴퓨터', '공부', '능력', '활용', '자격', '증', '급',
 };
 
 class MemoryEntityBundle {
@@ -39,6 +41,12 @@ class MemoryEntityBundle {
     this.organizations = const [],
     this.places = const [],
     this.activities = const [],
+    this.events = const [],
+    this.interests = const [],
+    this.contents = const [],
+    this.food = const [],
+    this.hobbies = const [],
+    this.emotions = const [],
   });
 
   final String eventTitle;
@@ -46,12 +54,15 @@ class MemoryEntityBundle {
   final List<String> organizations;
   final List<String> places;
   final List<String> activities;
+  final List<String> events;
+  final List<String> interests;
+  final List<String> contents;
+  final List<String> food;
+  final List<String> hobbies;
+  final List<String> emotions;
 
   bool get hasEventHub =>
-      eventTitle.isNotEmpty &&
-      eventTitle != '기억에 남는 순간.' &&
-      eventTitle != '기억에 남는 하루의 한 조각.' &&
-      !isGraphJunkTitle(eventTitle);
+      eventTitle.isNotEmpty && !isGenericHubTitle(eventTitle);
 }
 
 bool isBlockedPersonName(String raw) {
@@ -72,6 +83,7 @@ bool isGraphFoodOrNoiseToken(String token) {
   if (t == '나' || t == 'Me') return false;
   if (t.length <= 1) return true;
   if (kGraphFoodNoiseTokens.contains(t)) return true;
+  if (isGraphMealCompanionToken(t)) return true;
   if (RegExp(r'^(?:이런|저런|여러)').hasMatch(t)) return true;
   return false;
 }
@@ -94,6 +106,12 @@ MemoryEntityBundle extractMemoryEntities(
       organizations: const [],
       places: const [],
       activities: const [],
+      events: const [],
+      interests: const [],
+      contents: const [],
+      food: const [],
+      hobbies: const [],
+      emotions: const [],
     );
   }
 
@@ -113,6 +131,21 @@ MemoryEntityBundle extractMemoryEntities(
   var places = <String>[...localPlaces];
   var orgs = <String>[...localOrgs];
   var activities = <String>[];
+  var events = <String>[];
+  var interests = <String>[];
+  var contents = <String>[];
+  var food = <String>[];
+  var hobbies = <String>[];
+  var emotions = <String>[];
+
+  final semantic = extractSemanticFromText(content);
+  events.addAll(semantic.events);
+  interests.addAll(semantic.interests);
+  contents.addAll(semantic.contents);
+  food.addAll(semantic.food);
+  hobbies.addAll(semantic.hobbies);
+  emotions.addAll(semantic.emotions);
+  activities.addAll(semantic.activities);
 
   if (effectiveFragment != null) {
     for (final s in effectiveFragment.satellites) {
@@ -120,8 +153,11 @@ MemoryEntityBundle extractMemoryEntities(
       if (label.isEmpty || isGraphFoodOrNoiseToken(label)) continue;
       switch (s.kind) {
         case 'person':
-          if (!isBlockedPersonName(label) && isLikelyKoreanPersonName(normalizeKoreanPersonName(label))) {
-            people.add(normalizeKoreanPersonName(label));
+          if (!isBlockedPersonName(label)) {
+            final norm = normalizeKoreanPersonName(label);
+            if (isFamilyRelationTerm(norm) || isLikelyKoreanPersonName(norm)) {
+              people.add(norm);
+            }
           }
         case 'place':
           if (!people.contains(label)) places.add(label);
@@ -133,19 +169,44 @@ MemoryEntityBundle extractMemoryEntities(
               !_isPersonPlaceCompositeActivity(label)) {
             activities.add(label);
           }
+        case 'event':
+          events.add(label);
+        case 'content':
+          contents.add(label);
+        case 'interest':
+          interests.add(label);
+        case 'food':
+          food.add(label);
+        case 'hobby':
+          hobbies.add(label);
+        case 'emotion':
+          emotions.add(label);
+        case 'goal':
+          if (label.length >= 2) interests.add(label);
         default:
           break;
       }
     }
   }
 
-  people = _dedupeOrdered(people).where((n) => !isBlockedPersonName(n)).take(kGraphMaxPeopleSatellites).toList();
+  people = _dedupeOrdered(people)
+      .where((p) => !isKnownFoodLabel(p) && !isKnownContentLabel(p))
+      .where((p) => !isGraphVenueToken(p) && !_looksLikePlaceLabel(p))
+      .where((p) => !isGraphMorphologyJunkToken(p))
+      .take(kGraphMaxPeopleSatellites)
+      .toList();
   places = _dedupeOrdered(places).take(kGraphMaxPlaceSatellites).toList();
   orgs = _dedupeOrdered(orgs).take(kGraphMaxOrgSatellites).toList();
   activities.addAll(_extractActivitiesFromContent(content, people, memory.entities));
   activities = _dedupeOrdered(activities)
       .where((a) => !_isPersonPlaceCompositeActivity(a))
       .where((a) => !isGraphFoodOrNoiseToken(a))
+      .where((a) {
+        if (events.isEmpty) return true;
+        final primary = events.first;
+        if (primary.contains(a) || a.contains('시험') && primary.contains('시험')) return false;
+        return true;
+      })
       .take(2)
       .toList();
 
@@ -153,14 +214,25 @@ MemoryEntityBundle extractMemoryEntities(
     final trimmed = e.trim();
     if (!entityLabelReferencedInMemory(trimmed, memory)) continue;
     final norm = normalizeKoreanPersonName(stripTrailingKoreanParticles(trimmed));
+    if (isKnownFoodLabel(trimmed) || isKnownContentLabel(trimmed) ||
+        isKnownFoodLabel(norm) || isKnownContentLabel(norm)) {
+      continue;
+    }
+    if (isGraphVenueToken(trimmed) || isGraphVenueToken(norm) || _looksLikePlaceLabel(trimmed) || looksLikeKoreanPlaceName(trimmed)) {
+      places.add(trimmed);
+      continue;
+    }
     if ((isFamilyRelationTerm(norm) || isLikelyKoreanPersonName(norm)) && !isBlockedPersonName(norm)) {
       people.add(norm);
-    } else if (_looksLikePlaceLabel(trimmed)) {
-      places.add(trimmed);
     }
   }
 
-  people = _dedupeOrdered(people).take(kGraphMaxPeopleSatellites).toList();
+  people = _dedupeOrdered(people)
+      .where((p) => !isKnownFoodLabel(p) && !isKnownContentLabel(p))
+      .where((p) => !isGraphVenueToken(p) && !_looksLikePlaceLabel(p))
+      .where((p) => !isGraphMorphologyJunkToken(p))
+      .take(kGraphMaxPeopleSatellites)
+      .toList();
   places = _dedupeOrdered(places).take(kGraphMaxPlaceSatellites).toList();
 
   if (memory.type != 'graph_note') {
@@ -176,7 +248,167 @@ MemoryEntityBundle extractMemoryEntities(
     organizations: orgs,
     places: places,
     activities: activities,
+    events: _dedupeOrdered(events).take(3).toList(),
+    interests: _dedupeOrdered(interests).take(3).toList(),
+    contents: _dedupeOrdered(contents).take(3).toList(),
+    food: _dedupeOrdered(food).take(2).toList(),
+    hobbies: _dedupeOrdered(hobbies).take(2).toList(),
+    emotions: _dedupeOrdered(emotions).take(2).toList(),
   );
+}
+
+const int kHubTitleMaxLen = 48;
+
+bool memoryTextHasMultipleClauses(String text) {
+  final t = text.trim();
+  return RegExp(r'[,，]|(?:뒤|후)\s|(?:봤고|갔고|했고|먹고|마시고|즐기|가기로)').hasMatch(t);
+}
+
+bool isGenericHubTitle(String text, {String localeCode = 'ko'}) {
+  final v = text.trim();
+  if (v.isEmpty) return true;
+  if (localeCode == 'ko') {
+    return v == '기억에 남는 순간.' ||
+        v == '기억에 남는 하루의 한 조각.' ||
+        v == '기억' ||
+        v.startsWith('기억에 남는');
+  }
+  return v == 'A moment worth remembering.' || v == 'A slice of life worth keeping.';
+}
+
+/// 본문에 「삶」이 없는데 summary/허브에 「삶아 먹음」만 붙은 옛 규칙 오류.
+bool isFalseBoiledMealHubTitle(String title, String content) {
+  if (!RegExp(r'삶아\s*먹음').hasMatch(title.trim())) return false;
+  return !content.contains('삶');
+}
+
+/// 저장 summary·그래프 공통 — 본문만으로 허브 제목 (마침표 제외).
+String inferHubTitleFromContent(String content, {String localeCode = 'ko'}) {
+  final title = _resolveEventTitle(
+    content: content,
+    memory: Memory(
+      id: '',
+      content: content.trim(),
+      summary: '',
+      entities: const [],
+      createdAt: DateTime(1970),
+    ),
+    localeCode: localeCode,
+  );
+  return title.replaceAll(RegExp(r'[.!?…]+$'), '').trim();
+}
+
+String composeMemoryHubTitle(String text, {required String localeCode}) {
+  if (localeCode != 'ko') return '';
+  final t = text.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (t.length < 6) return '';
+
+  final semantic = extractSemanticFromText(t);
+  final places = extractPlacesFromMemoryText(t);
+  final segments = <String>[];
+  final seen = <String>{};
+
+  void add(String? raw) {
+    final v = raw?.trim() ?? '';
+    if (v.isEmpty || v.length > 18) return;
+    if (!seen.add(v)) return;
+    segments.add(v);
+  }
+
+  if (places.isNotEmpty) {
+    for (final p in places) {
+      if (!isPersonPlaceCompositeActivity(p)) add(p);
+    }
+  }
+
+  for (final f in semantic.food) {
+    add(f);
+  }
+
+  final book = RegExp(r'『([^』]{1,18})』').firstMatch(t);
+  if (book != null) add(book.group(1));
+
+  for (final c in semantic.contents) {
+    add(c);
+  }
+  for (final e in semantic.events) {
+    add(e);
+  }
+
+  final festival = RegExp(r'([가-힣]{2,12}영화제)').firstMatch(t);
+  if (festival != null) add(festival.group(1));
+
+  const activityHints = [
+    '보드게임', '산책', '공연', '독서 모임', '커피', '영화', '여행', '회식', '시험', '창업', '스타트업',
+  ];
+  for (final hint in activityHints) {
+    if (t.contains(hint)) add(hint);
+  }
+
+  for (final h in semantic.hobbies) {
+    add(h);
+  }
+  for (final a in semantic.activities) {
+    add(a);
+  }
+
+  if (places.length > 1) {
+    for (final p in places.skip(1)) {
+      if (!isPersonPlaceCompositeActivity(p)) add(p);
+    }
+  }
+
+  if (segments.length < 2) {
+    final org = RegExp(
+      r'([가-힣A-Za-z0-9]{2,12}(?:전자|그룹|은행|회사|병원|학교|대학교|네이버|카카오|쿠팡))',
+    ).firstMatch(t);
+    if (org != null) add(org.group(1));
+  }
+
+  if (segments.isEmpty) return '';
+
+  if (segments.length == 1 && places.any((p) => p == segments.first)) {
+    return '';
+  }
+
+  segments.sort((a, b) {
+    final ai = t.indexOf(a);
+    final bi = t.indexOf(b);
+    return (ai < 0 ? 9999 : ai).compareTo(bi < 0 ? 9999 : bi);
+  });
+
+  return _polishHubTitle(segments.take(5).join('·'));
+}
+
+String finalizeHubTitle(String raw) => _polishHubTitle(raw);
+
+String hubTitleFromContentLine(String content, {required String localeCode}) {
+  final line = extractBestMeaningLineForGraph(content, localeCode: localeCode);
+  if (line.isEmpty || isGenericHubTitle(line, localeCode: localeCode)) return '';
+  if (isGraphMetaContent(line)) return '';
+  return _polishHubTitle(line.replaceAll(RegExp(r'[.!?…]+$'), ''));
+}
+
+String _polishHubTitle(String raw) {
+  var value = raw.trim().replaceAll(RegExp(r'[.!?…]+$'), '');
+  if (value.isEmpty) return '';
+  if (value.length > kHubTitleMaxLen) {
+    final cut = value.lastIndexOf('·', kHubTitleMaxLen);
+    if (cut > 10) {
+      value = '${value.substring(0, cut)}…';
+    } else {
+      value = '${value.substring(0, kHubTitleMaxLen - 1)}…';
+    }
+  }
+  return '$value.';
+}
+
+bool isMeaningfulHubTitle(String title, {String localeCode = 'ko'}) {
+  final v = title.trim();
+  if (v.isEmpty || isGraphMetaContent(v) || isGenericHubTitle(v, localeCode: localeCode)) {
+    return false;
+  }
+  return v.length >= 4;
 }
 
 String _resolveEventTitle({
@@ -185,19 +417,36 @@ String _resolveEventTitle({
   required String localeCode,
   GraphMemoryFragment? aiFragment,
 }) {
-  final fromEvent = extractEventTitleFromText(content, localeCode: localeCode);
-  if (fromEvent.isNotEmpty) return fromEvent;
+  if (memoryTextHasMultipleClauses(content)) {
+    final composed = composeMemoryHubTitle(content, localeCode: localeCode);
+    if (isMeaningfulHubTitle(composed, localeCode: localeCode)) return composed;
+  }
 
-  final fromContent = extractBestMeaningLineForGraph(content, localeCode: localeCode);
-  if (fromContent.isNotEmpty && !isGraphJunkTitle(fromContent)) return fromContent;
+  final fromEvent = extractEventTitleFromText(content, localeCode: localeCode);
+  if (fromEvent.isNotEmpty && isMeaningfulHubTitle(fromEvent, localeCode: localeCode)) {
+    return fromEvent;
+  }
+
+  final composed = composeMemoryHubTitle(content, localeCode: localeCode);
+  if (isMeaningfulHubTitle(composed, localeCode: localeCode)) return composed;
+
+  final fromContent = hubTitleFromContentLine(content, localeCode: localeCode);
+  if (isMeaningfulHubTitle(fromContent, localeCode: localeCode)) return fromContent;
 
   final summary = memory.summary.trim();
-  if (summary.isNotEmpty && isMeaningfulGraphSummary(summary) && !isPhotoStyleSummary(summary)) {
-    return summary;
+  if (summary.isNotEmpty &&
+      !isPhotoStyleSummary(summary) &&
+      !isFalseBoiledMealHubTitle(summary, content) &&
+      isMeaningfulHubTitle(summary, localeCode: localeCode)) {
+    final fromSummary = hubTitleFromContentLine(summary, localeCode: localeCode);
+    if (fromSummary.isNotEmpty) return fromSummary;
+    return finalizeHubTitle(summary);
   }
 
   final aiTitle = aiFragment?.meaningTitle.trim() ?? '';
-  if (aiTitle.isNotEmpty && isMeaningfulGraphSummary(aiTitle)) return aiTitle;
+  if (aiTitle.isNotEmpty && isMeaningfulHubTitle(aiTitle, localeCode: localeCode)) {
+    return aiTitle;
+  }
 
   return localeCode == 'ko' ? '기억에 남는 순간.' : 'A moment worth remembering.';
 }
@@ -208,6 +457,28 @@ String extractEventTitleFromText(String text, {String localeCode = 'ko'}) {
   if (t.isEmpty) return '';
 
   if (localeCode == 'ko') {
+    if (!memoryTextHasMultipleClauses(t)) {
+      final boiled = RegExp(r'([가-힣]{2,8})(?:을|를)\s*삶(?:아|아서)\s*먹').firstMatch(t);
+      if (boiled != null) {
+        final item = boiled.group(1)!.trim();
+        if (isKnownFoodLabel(item) ||
+            (!isFamilyRelationTerm(item) &&
+                !isCompoundParentTerm(item) &&
+                !isLikelyKoreanPersonName(item))) {
+          return '$item 삶아 먹음';
+        }
+      }
+      final meal = RegExp(r'([가-힣]{2,8})(?:을|를)\s*먹').firstMatch(t);
+      if (meal != null) {
+        final item = meal.group(1)!.trim();
+        if (isKnownFoodLabel(item) ||
+            (!isFamilyRelationTerm(item) &&
+                !isCompoundParentTerm(item) &&
+                !isLikelyKoreanPersonName(item))) {
+          return '$item 먹음';
+        }
+      }
+    }
     if (t.contains('회식')) {
       if (t.contains('병원') || t.contains('직원')) return '병원 직원 회식';
       return '회식';
@@ -218,6 +489,19 @@ String extractEventTitleFromText(String text, {String localeCode = 'ko'}) {
     if (t.contains('여행')) return '여행';
     if (t.contains('생일')) return '생일';
     if (t.contains('결혼식')) return '결혼식';
+    final workplace = RegExp(
+      r'([가-힣A-Za-z0-9]{2,12}(?:전자|그룹|은행|회사|병원|학교|대학교))(?:에서|에)\s+',
+    ).firstMatch(t);
+    if (workplace != null &&
+        RegExp(r'(?:일한다|근무|다닌|출근|취직|입사|재직)').hasMatch(t)) {
+      return '${workplace.group(1)} 근무';
+    }
+    final body = _textAfterSubject(t).replaceFirst(RegExp(r'^(?:오늘|내일|어제)\s+'), '');
+    final exam = RegExp(
+      r'([가-힣A-Za-z0-9]+(?:\s+[가-힣A-Za-z0-9]+){0,5}\s*시험)',
+    ).firstMatch(body);
+    if (exam != null) return exam.group(1)!.trim();
+    if (t.contains('시험')) return '시험';
     final outing = RegExp(r'([가-힣]{2,8}(?:천|산|공원|해변|계곡|바다|강))에\s+(?:놀러|갔)').firstMatch(t);
     if (outing != null) return '${outing.group(1)} 나들이';
     if (t.contains('놀러갔') || t.contains('놀러 갔')) {
@@ -244,6 +528,12 @@ String extractEventTitleFromText(String text, {String localeCode = 'ko'}) {
   return '';
 }
 
+String _textAfterSubject(String text) {
+  final subject = RegExp(r'^[^,.!?]{1,24}?(?:이|가)\s+').firstMatch(text.trim());
+  if (subject == null) return text.trim();
+  return text.substring(subject.end).trim();
+}
+
 List<String> extractPeopleFromMemoryText(String text) {
   final value = text.trim();
   if (value.isEmpty) return [];
@@ -260,13 +550,28 @@ List<String> extractPeopleFromMemoryText(String text) {
       return;
     }
     if (isFamilyRelationTerm(token)) {
+      if (isFamilyTermEmbeddedInCompound(value, token)) return;
       if (seen.add(token)) names.add(token);
       return;
     }
+    if (isCompoundParentTerm(token)) {
+      if (seen.add(token)) names.add(token);
+      return;
+    }
+    if (isKnownFoodLabel(token) || isKnownContentLabel(token)) return;
+    if (isGraphMorphologyJunkToken(token)) return;
     final name = normalizeKoreanPersonName(token);
     if (isBlockedPersonName(name)) return;
     if (!isLikelyKoreanPersonName(name)) return;
     if (seen.add(name)) names.add(name);
+  }
+
+  for (final term in extractCompoundParentTermsFromText(value)) {
+    add(term);
+  }
+
+  for (final term in extractFamilyRelationTermsFromText(value)) {
+    add(term);
   }
 
   for (final match in RegExp(r'([가-힣]{2,4})\s+(?:간호과장|간호팀장|팀장|과장|원장|부장|이사|대리)').allMatches(value)) {
@@ -314,6 +619,16 @@ List<String> extractPeopleFromMemoryText(String text) {
   final patterns = [
     RegExp(r'([가-힣]{2,4})이하고(?=[\s,.]|$)'),
     RegExp(r'([가-힣]{2,4})(?:이랑|랑|와|과)(?=[\s,.]|$)'),
+    // "민수에게", "영희한테"
+    RegExp(r'([가-힣]{2,4})(?:에게|한테)(?=\s)'),
+    // "영희를 만나"
+    RegExp(r'([가-힣]{2,4})(?:을|를)\s+만나'),
+    // "지영의 남동생", "민수의 대학 동기"
+    RegExp(r'([가-힣]{2,4})의\s+(?:[가-힣]{1,8}\s+)?(?:남동생|여동생|형|누나|오빠|언니|동생|동기|친구)'),
+    // "지영은", "민수는", "철수는"
+    RegExp(r'([가-힣]{2,4})(?:은|는)(?=[\s,.]|$)'),
+    // "민수와 지영은 …" — 뒤쪽 공동 주어.
+    RegExp(r'(?:와|과)\s+([가-힣]{2,4})(?:은|는)(?=[\s,.]|$)'),
     RegExp(r'([가-힣]{2,4})(?:님|씨)(?=[\s,.]|$)'),
   ];
   for (final pattern in patterns) {
@@ -354,9 +669,13 @@ List<String> extractPlacesFromMemoryText(String text) {
   void consider(String? raw) {
     final value = raw?.trim().replaceAll(RegExp(r'\s+'), ' ') ?? '';
     if (value.isEmpty || value.length > 24) return;
+    if (value.contains('와 ') || value.contains('과 ')) return;
+    if (isPersonPlaceCompositeActivity(value)) return;
     final minLen = isGraphVenueToken(value) ? 2 : 3;
     if (value.length < minLen) return;
     if (peopleNoiseInPlace(value)) return;
+    if (isMisleadingPlaceChonToken(value)) return;
+    if (isGraphMorphologyJunkToken(value)) return;
     if (isJunkEntityOrKeyword(value) || isGraphMetaContent(value)) return;
     if (seen.add(value)) results.add(value);
   }
@@ -377,7 +696,18 @@ List<String> extractPlacesFromMemoryText(String text) {
     consider(match.group(1));
   }
 
+  for (final match in RegExp(r'([가-힣]{2,8}(?:\s+[가-힣]{2,8})?해수욕장)').allMatches(text)) {
+    consider(match.group(1));
+  }
+
   for (final match in RegExp(r'([가-힣]{2,8}(?:천|산|강|교|계곡|해변|공원))(?=에\s|에서\s|에$)').allMatches(text)) {
+    consider(match.group(1));
+  }
+
+  // 단독 장소 토큰: "뒤 카페에 갔다", "카페에서 라떼" 등 (이름 접미사 패턴과 별도).
+  for (final match in RegExp(
+    r'(?<![가-힣])(카페|식당|술집|편의점|마트|병원|약국|학교|회사|사무실|회의실|강당)(?:에|에서)(?:\s|$)',
+  ).allMatches(text)) {
     consider(match.group(1));
   }
 
@@ -387,6 +717,21 @@ List<String> extractPlacesFromMemoryText(String text) {
   final atPlace = RegExp(r'([가-힣]{2,10})\s+에서').firstMatch(text);
   if (atPlace != null && _looksLikePlaceLabel(atPlace.group(1)!)) {
     consider(atPlace.group(1));
+  }
+
+  if (results.isEmpty) {
+    const suffix = '해수욕장';
+    final idx = text.indexOf(suffix);
+    if (idx >= 2) {
+      var start = idx;
+      while (start > 0 && RegExp(r'[가-힣 ]').hasMatch(text[start - 1])) {
+        start--;
+      }
+      final place = text.substring(start, idx + suffix.length).trim();
+      if (place.length >= suffix.length && place.length <= 24 && seen.add(place)) {
+        results.add(place);
+      }
+    }
   }
 
   return results;
@@ -417,7 +762,24 @@ bool isGraphVenueToken(String word) {
   return venues.contains(value);
 }
 
+bool _looksLikeGraphPersonToken(String token) {
+  if (isKnownFoodLabel(token) || isKnownContentLabel(token)) return false;
+  if (isFamilyRelationTerm(token) || isCompoundParentTerm(token)) return true;
+  return isLikelyKoreanPersonName(token) && !isGraphFoodOrNoiseToken(token);
+}
+
+bool _isPersonPersonCompositeActivity(String activity) {
+  final m = RegExp(r'^([가-힣]{2,12})와\s+([가-힣]{2,12})$').firstMatch(activity.trim());
+  if (m == null) return false;
+  final left = stripTrailingKoreanParticles(m.group(1)!);
+  final right = stripTrailingKoreanParticles(m.group(2)!);
+  if (isGraphFoodOrNoiseToken(left) || isGraphFoodOrNoiseToken(right)) return false;
+  if (isGraphVenueToken(right) || _looksLikePlaceLabel(right)) return false;
+  return _looksLikeGraphPersonToken(left) && _looksLikeGraphPersonToken(right);
+}
+
 bool _isPersonPlaceCompositeActivity(String activity) {
+  if (_isPersonPersonCompositeActivity(activity)) return true;
   final m = RegExp(r'^([가-힣]{2,8})와\s+(.+)$').firstMatch(activity.trim());
   if (m == null) return false;
   final tail = m.group(2)!.trim();
@@ -443,20 +805,57 @@ bool entityLabelReferencedInMemory(String label, Memory memory) {
   return false;
 }
 
+const _graphKeepSatelliteKeywords = {
+  '시험', '공부', '회식', '여행', '운동', '식사', '모임', '회의', '생일', '결혼식', '졸업식',
+  '컴퓨터', '컴퓨터 활용 능력',
+};
+
+bool _isChipStyleHubTitle(String hub) {
+  final h = hub.replaceAll(RegExp(r'[.!?…]+$'), '').trim();
+  if (!h.contains('·')) return false;
+  final parts = h.split('·').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
+  if (parts.length < 2 || h.length > kHubTitleMaxLen + 4) return false;
+  return parts.every((p) => p.length <= 14 && !p.contains('와') && !p.contains('에서'));
+}
+
 bool shouldShowGraphSatelliteLabel(String label, {String? hubTitle}) {
   final v = label.trim();
   if (v.isEmpty || isInternalMemoryEntityTag(v)) return false;
   if (isPersonPlaceCompositeActivity(v)) return false;
   final hub = hubTitle?.trim() ?? '';
+  if (hub.isNotEmpty && _isChipStyleHubTitle(hub)) return true;
   if (hub.isNotEmpty) {
     if (hub == v) return false;
-    // 가족 호칭(아들·딸 등)은 허브 제목에 있어도 연락처·탭용 위성으로 유지.
-    if (isFamilyRelationTerm(v)) return true;
+    // 가족 호칭(아들·딸 등) — 허브가 긴 문장일 때만 별도 위성 유지.
+    if (isFamilyRelationTerm(v)) {
+      if (hub.length <= v.length + 2) return false;
+      return true;
+    }
+    if (isCompoundParentTerm(v)) {
+      if (hub.length <= v.length + 2) return false;
+      return true;
+    }
+    if (isKnownFoodLabel(v)) return true;
     // 장소만 제목 중복 시 위성 생략 (카페·집 등).
-    if (_looksLikePlaceLabel(v) || isGraphVenueToken(v)) {
+    if ((_looksLikePlaceLabel(v) || isGraphVenueToken(v)) &&
+        v.length <= 8 &&
+        !_graphKeepSatelliteKeywords.contains(v)) {
       return !(v.length >= 2 && hub.contains(v));
     }
-    if (v.length >= 2 && hub.contains(v)) return false;
+    if (v.length >= 2 && hub.contains(v)) {
+      if (isFamilyRelationTerm(v)) {
+        if (hub.length <= v.length + 2) return false;
+        return true;
+      }
+      if (_looksLikePlaceLabel(v) || isGraphVenueToken(v)) {
+        return false;
+      }
+      if (isLikelyKoreanPersonName(v) && !_graphKeepSatelliteKeywords.contains(v)) {
+        return false;
+      }
+      if (hub.length > v.length + 6) return true;
+      return false;
+    }
   }
   return true;
 }
@@ -479,6 +878,12 @@ List<String> userVisibleEntityLabels(
     ...bundle.places,
     ...bundle.organizations,
     ...bundle.activities,
+    ...bundle.events,
+    ...bundle.interests,
+    ...bundle.contents,
+    ...bundle.food,
+    ...bundle.hobbies,
+    ...bundle.emotions,
   ];
 
   final fromStored = sanitizeEntities(memory.entities).where((e) {
@@ -518,9 +923,10 @@ List<String> _extractActivitiesFromContent(
     out.add('다슬기');
   }
 
-  for (final match in RegExp(r'([가-힣]{2,6})와\s+([가-힣]{2,12})').allMatches(content)) {
+  for (final match in RegExp(r'([가-힣]{2,8})와\s+([가-힣]{2,12})').allMatches(content)) {
     final left = normalizeKoreanPersonName(stripTrailingKoreanParticles(match.group(1)!));
     var tail = stripTrailingKoreanParticles(match.group(2)!.trim());
+    if (_looksLikeGraphPersonToken(left) && _looksLikeGraphPersonToken(tail)) continue;
     if (!isFamilyRelationTerm(left) && !isLikelyKoreanPersonName(left)) continue;
     if (isGraphVenueToken(tail) || _looksLikePlaceLabel(tail)) continue;
     if (isGraphMealCompanionToken(tail)) continue;
@@ -534,7 +940,7 @@ List<String> _extractActivitiesFromContent(
     if (content.contains(activity)) out.add(activity);
   }
 
-  const eventActivities = ['여행', '회식', '회의', '교육', '워크숍'];
+  const eventActivities = ['여행', '회식', '회의', '교육', '워크숍', '시험', '공부'];
   for (final activity in eventActivities) {
     if (content.contains(activity)) out.add(activity);
   }
@@ -553,6 +959,11 @@ List<String> extractOrganizationsFromText(String text, {String localeCode = 'ko'
   if (RegExp(r'간호과').hasMatch(text)) add(localeCode == 'ko' ? '간호과' : 'Nursing dept');
   if (RegExp(r'보호사(?:로는|들|와|과)').hasMatch(text)) {
     add(localeCode == 'ko' ? '보호사' : 'Care workers');
+  }
+  for (final match in RegExp(
+    r'([가-힣A-Za-z0-9]{2,12}(?:전자|그룹|은행|회사|병원|학교|대학교))(?:에서|에)\s+',
+  ).allMatches(text)) {
+    add(match.group(1)!);
   }
   return orgs;
 }
@@ -587,6 +998,24 @@ Set<String> entityKeysFromBundle(MemoryEntityBundle bundle) {
   }
   for (final a in bundle.activities) {
     keys.add('activity::$a');
+  }
+  for (final e in bundle.events) {
+    keys.add('event::$e');
+  }
+  for (final i in bundle.interests) {
+    keys.add('interest::$i');
+  }
+  for (final c in bundle.contents) {
+    keys.add('content::$c');
+  }
+  for (final f in bundle.food) {
+    keys.add('food::$f');
+  }
+  for (final h in bundle.hobbies) {
+    keys.add('hobby::$h');
+  }
+  for (final e in bundle.emotions) {
+    keys.add('emotion::$e');
   }
   if (bundle.eventTitle.isNotEmpty) {
     keys.add('event::${bundle.eventTitle}');

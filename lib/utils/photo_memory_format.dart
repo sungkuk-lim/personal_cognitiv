@@ -36,6 +36,11 @@ String? extractPlaceHintFromOcr(String text) {
   final trimmed = text.trim();
   if (trimmed.isEmpty) return null;
 
+  final cityBridge = RegExp(r'([가-힣]{2,6})\s+([가-힣]{2,8}교)').firstMatch(trimmed);
+  if (cityBridge != null) {
+    return '${cityBridge.group(1)} ${cityBridge.group(2)}';
+  }
+
   final candidates = <String>[];
 
   void consider(String? raw) {
@@ -48,7 +53,14 @@ String? extractPlaceHintFromOcr(String text) {
     if (RegExp(r'\d').hasMatch(value) && !_placeHintAllowsDigits(value)) return;
     if (value.contains('의 ')) return;
     if (peopleNoiseInPlaceHint(value)) return;
+    if (isMisleadingPlaceChonToken(value)) return;
+    if (isGraphMorphologyJunkToken(value)) return;
     candidates.add(value);
+  }
+
+  // 도시 + 교·대교 (경주 월영교 등).
+  for (final match in RegExp(r'([가-힣]{2,6})\s+([가-힣]{2,8}(?:교|대교))').allMatches(trimmed)) {
+    consider('${match.group(1)} ${match.group(2)}');
   }
 
   // 짧은 지명 우선 (길안천에, 월영교에서).

@@ -214,15 +214,34 @@ MemoryQuery parseNaturalLanguageQuery(String raw, {String localeCode = 'ko'}) {
   }
 
   final emotions = _pickLexicon(q, kEmotionLexicon);
-  final activities = _pickLexicon(q, kActivityLexicon);
+  final activities = _pickLexicon(q, kQueryActivityLexicon);
   final foods = _pickLexicon(q, kFoodLexicon);
-  final hobbies = _pickLexicon(q, kHobbyLexicon);
-  final seasons = _pickLexicon(q, kSeasonLexicon);
-  final weathers = _pickLexicon(q, kWeatherLexicon);
 
   final people = <String>[];
   for (final term in koreanFamilyRelationTerms) {
     if (q.contains(term)) people.add(term);
+  }
+  for (final match in RegExp(
+    r'([가-힣]{2,5})(?:와|과|랑|이랑|하고|와함께|이랑함께|님과|님랑|이가|가)',
+  ).allMatches(q)) {
+    final token = normalizeKoreanPersonName(match.group(1)!.trim());
+    if (token.length >= 2 &&
+        isLikelyKoreanPersonName(token) &&
+        !kEmotionLexicon.contains(token) &&
+        !kQueryActivityLexicon.contains(token) &&
+        !kFoodLexicon.contains(token)) {
+      people.add(token);
+    }
+  }
+  for (final match in RegExp(r'([가-힣]{2,5})이(?=\s|함께|에서|와|과|랑|$)').allMatches(q)) {
+    final token = normalizeKoreanPersonName(match.group(1)!.trim());
+    if (token.length >= 2 &&
+        isLikelyKoreanPersonName(token) &&
+        !kEmotionLexicon.contains(token) &&
+        !kQueryActivityLexicon.contains(token) &&
+        !kFoodLexicon.contains(token)) {
+      people.add(token);
+    }
   }
   for (final match in RegExp(r'[가-힣]{2,4}').allMatches(q)) {
     final token = match.group(0)!;
@@ -232,6 +251,16 @@ MemoryQuery parseNaturalLanguageQuery(String raw, {String localeCode = 'ko'}) {
       people.add(normalizeKoreanPersonName(token));
     }
   }
+
+  final hobbies = _pickLexicon(q, kHobbyLexicon);
+  final seasons = _pickLexicon(q, kSeasonLexicon);
+  final weathers = _pickLexicon(q, kWeatherLexicon);
+
+  final activityExtras = <String>[];
+  if (RegExp(r'영화를?\s*봤|영화\s*관람|영화\s*본').hasMatch(q)) activityExtras.add('영화');
+  if (RegExp(r'공연을?\s*봤|공연\s*관람').hasMatch(q)) activityExtras.add('공연');
+  if (RegExp(r'산책').hasMatch(q)) activityExtras.add('산책');
+  final mergedActivities = _dedupeStrings([...activities, ...activityExtras]);
 
   final places = <String>[];
   for (final match in RegExp(r'[가-힣]{2,12}(?:해수욕장|해변|공원|카페|식당|역)?').allMatches(q)) {
@@ -263,7 +292,7 @@ MemoryQuery parseNaturalLanguageQuery(String raw, {String localeCode = 'ko'}) {
     people: _dedupeStrings(people),
     places: _dedupeStrings(places),
     emotions: emotions,
-    activities: activities,
+    activities: mergedActivities,
     foods: foods,
     hobbies: hobbies,
     seasons: seasons,

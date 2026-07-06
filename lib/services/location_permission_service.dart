@@ -32,6 +32,26 @@ class LocationPermissionService {
     return _fromPermission(permission);
   }
 
+  static Future<Position?> getCurrentPositionForMemoryCapture() async {
+    try {
+      final access = await currentAccess();
+      if (access != AppLocationAccess.granted) return null;
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 12),
+        ),
+      );
+    } catch (e, stack) {
+      debugPrint('getCurrentPositionForMemoryCapture failed: $e\n$stack');
+      try {
+        return await Geolocator.getLastKnownPosition();
+      } catch (_) {
+        return null;
+      }
+    }
+  }
+
   static Future<Position?> getCurrentPositionIfAllowed() async {
     try {
       final access = await currentAccess();

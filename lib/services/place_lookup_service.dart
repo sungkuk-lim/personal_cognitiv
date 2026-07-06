@@ -38,12 +38,22 @@ class PlaceLookupService {
   static String? formatFullAddress(Placemark p) {
     final region = p.administrativeArea?.trim() ?? '';
     final city = p.locality?.trim() ?? '';
+    final district = p.subAdministrativeArea?.trim() ?? '';
+    final neighborhood = p.subLocality?.trim() ?? '';
     final street = p.thoroughfare?.trim() ?? '';
     final number = p.subThoroughfare?.trim() ?? '';
+    final name = p.name?.trim() ?? '';
 
     final parts = <String>[];
     if (region.isNotEmpty) parts.add(region);
     if (city.isNotEmpty && city != region) parts.add(city);
+    if (district.isNotEmpty && district != city && district != region) parts.add(district);
+    if (neighborhood.isNotEmpty &&
+        neighborhood != district &&
+        neighborhood != city &&
+        !parts.contains(neighborhood)) {
+      parts.add(neighborhood);
+    }
 
     if (street.isNotEmpty && number.isNotEmpty) {
       parts.add('$street $number');
@@ -51,6 +61,12 @@ class PlaceLookupService {
       parts.add(street);
     } else if (number.isNotEmpty) {
       parts.add(number);
+    } else if (name.isNotEmpty &&
+        name != neighborhood &&
+        name != district &&
+        name != city &&
+        name.length >= 2) {
+      parts.add(name);
     }
 
     if (parts.isEmpty) {

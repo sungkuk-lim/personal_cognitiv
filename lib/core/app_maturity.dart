@@ -6,7 +6,7 @@
 
 /// [kProCloudGatePercent] 이상: Pro·클라우드 게이트 적용 + 사용자에게 1회 안내.
 
-const int kAppCompletionPercent = 90;
+const int kAppCompletionPercent = 95;
 
 
 

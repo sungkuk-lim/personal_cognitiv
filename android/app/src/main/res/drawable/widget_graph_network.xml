@@ -1,67 +1,72 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="200dp"
-    android:height="140dp"
-    android:viewportWidth="200"
-    android:viewportHeight="140">
+    android:width="480dp"
+    android:height="300dp"
+    android:viewportWidth="480"
+    android:viewportHeight="300">
 
-  <!-- 관계망 엣지 -->
+  <!-- 메인 클러스터 -->
   <path
-      android:pathData="M100,52 L42,28 L18,72 L58,108 L118,96 L162,58 L100,52 Z"
-      android:strokeColor="#4D7C4DFF"
-      android:strokeWidth="1.2"
+      android:pathData="M326,126 L456,44 L472,126 L432,246 L296,192 L326,126 Z"
+      android:strokeColor="#667C4DFF"
+      android:strokeWidth="2"
       android:fillColor="#00000000" />
   <path
-      android:pathData="M100,52 L162,28 L178,88"
-      android:strokeColor="#33E91E63"
-      android:strokeWidth="1"
+      android:pathData="M326,126 L248,72 L96,60"
+      android:strokeColor="#44E91E63"
+      android:strokeWidth="1.6"
       android:fillColor="#00000000" />
   <path
-      android:pathData="M58,108 L28,118 L42,28"
-      android:strokeColor="#3300897B"
-      android:strokeWidth="1"
-      android:fillColor="#00000000" />
-  <path
-      android:pathData="M118,96 L162,58 L162,28"
-      android:strokeColor="#33FFFFFF"
-      android:strokeWidth="0.8"
+      android:pathData="M326,126 L182,234 L96,60"
+      android:strokeColor="#4400897B"
+      android:strokeWidth="1.4"
       android:fillColor="#00000000" />
 
-  <!-- 허브 노드 -->
+  <!-- 서브 클러스터 -->
   <path
-      android:pathData="M100,52 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0"
-      android:fillColor="#805C6BC0" />
+      android:pathData="M96,60 L36,24 L18,144 L72,192 L96,60 Z"
+      android:strokeColor="#55E91E63"
+      android:strokeWidth="1.8"
+      android:fillColor="#00000000" />
   <path
-      android:pathData="M100,52 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"
-      android:fillColor="#FF7C4DFF" />
-
-  <!-- 위성 노드 -->
-  <path
-      android:pathData="M42,28 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0"
-      android:fillColor="#CCE91E63" />
-  <path
-      android:pathData="M162,28 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
-      android:fillColor="#CC00BCD4" />
-  <path
-      android:pathData="M18,72 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
-      android:fillColor="#CC00897B" />
-  <path
-      android:pathData="M58,108 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
-      android:fillColor="#CCFFB300" />
-  <path
-      android:pathData="M118,96 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0"
-      android:fillColor="#CC5C6BC0" />
-  <path
-      android:pathData="M162,58 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"
-      android:fillColor="#99FFFFFF" />
-  <path
-      android:pathData="M178,88 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0"
-      android:fillColor="#99B388FF" />
-
-  <!-- 글로우 링 -->
-  <path
-      android:pathData="M100,52 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0"
-      android:strokeColor="#337C4DFF"
+      android:pathData="M182,234 L132,264 L248,72"
+      android:strokeColor="#5500BCD4"
       android:strokeWidth="1.5"
       android:fillColor="#00000000" />
+
+  <!-- 메인 허브 -->
+  <path
+      android:pathData="M326,126 m-18,0 a18,18 0 1,0 36,0 a18,18 0 1,0 -36,0"
+      android:fillColor="#805C6BC0" />
+  <path
+      android:pathData="M326,126 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0"
+      android:fillColor="#FF7C4DFF" />
+  <path
+      android:pathData="M326,126 m-26,0 a26,26 0 1,0 52,0 a26,26 0 1,0 -52,0"
+      android:strokeColor="#6600BCD4"
+      android:strokeWidth="2"
+      android:fillColor="#00000000" />
+  <path
+      android:pathData="M326,126 m-36,0 a36,36 0 1,0 72,0 a36,36 0 1,0 -72,0"
+      android:strokeColor="#447E57C2"
+      android:strokeWidth="1.4"
+      android:fillColor="#00000000" />
+
+  <!-- 서브 허브 -->
+  <path android:pathData="M96,60 m-12,0 a12,12 0 1,0 24,0 a12,12 0 1,0 -24,0" android:fillColor="#88E91E63" />
+  <path android:pathData="M96,60 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" android:fillColor="#FFE91E63" />
+  <path android:pathData="M182,234 m-10,0 a10,10 0 1,0 20,0 a10,10 0 1,0 -20,0" android:fillColor="#8800897B" />
+  <path android:pathData="M182,234 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" android:fillColor="#FF00BCD4" />
+
+  <!-- 컬러 위성 -->
+  <path android:pathData="M456,44 m-8,0 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0" android:fillColor="#E6E91E63" />
+  <path android:pathData="M472,126 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" android:fillColor="#CC00BCD4" />
+  <path android:pathData="M432,246 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" android:fillColor="#CCFFB300" />
+  <path android:pathData="M296,192 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" android:fillColor="#CC7E57C2" />
+  <path android:pathData="M248,72 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" android:fillColor="#CC5C6BC0" />
+  <path android:pathData="M36,24 m-7,0 a7,7 0 1,0 14,0 a7,7 0 1,0 -14,0" android:fillColor="#CC00897B" />
+  <path android:pathData="M18,144 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" android:fillColor="#CCFF7043" />
+  <path android:pathData="M72,192 m-6,0 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0" android:fillColor="#CCAB47BC" />
+  <path android:pathData="M132,264 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" android:fillColor="#AA26A69A" />
+  <path android:pathData="M468,258 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" android:fillColor="#9942A5F5" />
 </vector>

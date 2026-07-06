@@ -36,6 +36,10 @@ class LocalMemoryStore {
     await _prefs.setString(prefLocalMemories, encoded);
   }
 
+  Future<void> clearAll() async {
+    await _prefs.remove(prefLocalMemories);
+  }
+
   Future<Memory> insert(Memory memory) async {
     final saved = memory.copyWith(
       isLocalOnly: true,

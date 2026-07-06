@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/app_theme.dart';
 import '../models/memory.dart';
 import 'entity_canonical.dart';
 import 'korean_person_names.dart';
@@ -8,15 +9,28 @@ import 'memory_participation_extract.dart';
 import 'ocr_utils.dart';
 import 'photo_memory_format.dart';
 
-enum MemoryKeywordKind { person, place, tag }
+enum MemoryKeywordKind { person, place, event, interest, activity, food, organization, tag }
 
 MemoryKeywordKind classifyKeyword(String keyword, Memory memory, {String localeCode = 'ko'}) {
   final k = keyword.trim();
   if (k.isEmpty) return MemoryKeywordKind.tag;
 
-  if (looksLikeKoreanPlaceName(k)) return MemoryKeywordKind.place;
+  final bundle = extractMemoryEntities(memory, localeCode: localeCode);
+  bool matches(String label) => entityLabelMatchesKeyword(label, k);
 
-  for (final entity in userVisibleEntityLabels(memory)) {
+  if (isSelfPersonLabel(k, localeCode) || bundle.people.any(matches)) {
+    if (isLikelyKoreanPersonName(k) || isFamilyRelationTerm(k) || bundle.people.any(matches)) {
+      return MemoryKeywordKind.person;
+    }
+  }
+  if (bundle.places.any(matches) || looksLikeKoreanPlaceName(k)) return MemoryKeywordKind.place;
+  if (bundle.organizations.any(matches)) return MemoryKeywordKind.organization;
+  if (bundle.events.any(matches)) return MemoryKeywordKind.event;
+  if (bundle.interests.any(matches)) return MemoryKeywordKind.interest;
+  if (bundle.food.any(matches)) return MemoryKeywordKind.food;
+  if (bundle.activities.any(matches) || bundle.hobbies.any(matches)) return MemoryKeywordKind.activity;
+
+  for (final entity in userVisibleEntityLabels(memory, localeCode: localeCode)) {
     if (!entityLabelMatchesKeyword(entity, k)) continue;
     if (isLikelyKoreanPersonName(k) || isLikelyKoreanPersonName(entity)) {
       return MemoryKeywordKind.person;
@@ -24,7 +38,6 @@ MemoryKeywordKind classifyKeyword(String keyword, Memory memory, {String localeC
     if (looksLikeKoreanPlaceName(entity)) return MemoryKeywordKind.place;
   }
 
-  final bundle = extractMemoryEntities(memory, localeCode: localeCode);
   for (final person in bundle.people) {
     if (entityLabelMatchesKeyword(person, k)) return MemoryKeywordKind.person;
   }
@@ -80,7 +93,10 @@ int memoryKeywordMatchScore(Memory memory, String keyword, {String localeCode = 
   final k = keyword.trim();
   if (k.isEmpty) return 0;
 
-  for (final entity in userVisibleEntityLabels(memory)) {
+  for (final entity in sanitizeEntities(memory.entities)) {
+    if (isInternalMemoryEntityTag(entity)) continue;
+    if (isPersonPlaceCompositeActivity(entity)) continue;
+    if (!entityLabelReferencedInMemory(entity, memory)) continue;
     if (entityLabelMatchesKeyword(entity, k)) return 100;
   }
 
@@ -133,6 +149,16 @@ IconData iconForKeywordKind(MemoryKeywordKind kind) {
       return Icons.person_outline_rounded;
     case MemoryKeywordKind.place:
       return Icons.place_outlined;
+    case MemoryKeywordKind.event:
+      return Icons.event_note_outlined;
+    case MemoryKeywordKind.interest:
+      return Icons.lightbulb_outline_rounded;
+    case MemoryKeywordKind.activity:
+      return Icons.directions_walk_outlined;
+    case MemoryKeywordKind.food:
+      return Icons.restaurant_outlined;
+    case MemoryKeywordKind.organization:
+      return Icons.business_outlined;
     case MemoryKeywordKind.tag:
       return Icons.sell_outlined;
   }
@@ -141,9 +167,19 @@ IconData iconForKeywordKind(MemoryKeywordKind kind) {
 Color colorForKeywordKind(MemoryKeywordKind kind, ColorScheme scheme) {
   switch (kind) {
     case MemoryKeywordKind.person:
-      return Colors.pink.shade400;
+      return AppGraphColors.person;
     case MemoryKeywordKind.place:
-      return Colors.teal.shade500;
+      return AppGraphColors.place;
+    case MemoryKeywordKind.event:
+      return AppGraphColors.event;
+    case MemoryKeywordKind.interest:
+      return AppGraphColors.interest;
+    case MemoryKeywordKind.activity:
+      return AppGraphColors.activity;
+    case MemoryKeywordKind.food:
+      return AppGraphColors.food;
+    case MemoryKeywordKind.organization:
+      return AppGraphColors.organization;
     case MemoryKeywordKind.tag:
       return scheme.primary;
   }

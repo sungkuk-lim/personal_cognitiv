@@ -33,21 +33,27 @@ class GraphAiService {
     final system = '''
 You design a personal life ENTITY graph (not keyword graph). Respond in $lang JSON only.
 Return: {
-  "event_title": "core event in 4-12 words (e.g. 병원 직원 회식). NEVER food items.",
+  "event_title": "core event in 4-12 words (e.g. 병원 직원 회식, 컴퓨터 활용 능력 1급 시험). NEVER food items alone.",
   "meaning_title": "same as event_title or one evocative sentence",
   "satellites": [
-    {"kind": "person|place|organization|activity|emotion", "label": "short noun, max 12 chars"}
+    {"kind": "person|place|organization|activity|event|content|interest|food|hobby|emotion|goal", "label": "short noun, max 16 chars"}
   ],
   "relations": [
     {"target_memory_id": "uuid from siblings", "relation_type": "family|place|theme|emotion|goal", "label": "short edge label"}
   ]
 }
-Priority (strict): person ★★★★★ > event ★★★★★ > place ★★★★ > organization ★★★★ > emotion ★★★ > food ★ (NEVER as satellite).
+Priority (strict): person ★★★★★ > event ★★★★★ > place ★★★★ > organization ★★★★ > activity/content/interest ★★★ > emotion ★★ > food ★.
 Rules:
-- event_title: the MAIN occasion (회식, 회의, 여행). Not "탕수육" or "술".
-- satellites: max 12 persons, max 3 places, max 3 organizations. NO food (탕수육, 자장면, 술, 음식).
-- person: real human names only. Strip titles (간호과장 → name only).
-- organization: 병원, 간호과, 보호사팀 etc.
+- event_title: the MAIN occasion (회식, 시험, 여행). Not "탕수육" alone.
+- person: real human names AND family terms (아들, 엄마, 아버지, 남편, 딸, 동생 등).
+- event: 시험, 생일, 결혼식, 졸업식, 회식 등.
+- content: 영화, 드라마, 책, 유튜브 등.
+- interest: AI, 투자, 컴퓨터, 디자인 등 공통 관심사.
+- activity: 운동, 공부, 등산, 여행 등 행동.
+- hobby: 독서, 사진, 게임, 캠핑 등.
+- food: only when explicitly mentioned as food item (max 1).
+- satellites: max 12 persons, max 3 places, max 3 organizations, max 2 events, max 2 interests.
+- organization: 병원, 학교, 회사, 동아리 etc.
 - place: restaurant/location names only.
 - Never put people names as place. No lot numbers alone as place.
 - relations: only to sibling ids listed; max 3 meaningful links.
@@ -139,10 +145,12 @@ highlights: max 4 short phrases about people/events/places. Skip food and meta h
       if (!seen.add(label)) continue;
       if (!_allowedKinds.contains(s.kind)) continue;
       if (s.kind == 'person') {
-        if (!isLikelyKoreanPersonName(normalizeKoreanPersonName(label))) continue;
+        final norm = normalizeKoreanPersonName(label);
+        if (!isFamilyRelationTerm(norm) && !isLikelyKoreanPersonName(norm)) continue;
         if (personCount >= kGraphMaxPeopleSatellites) continue;
         personCount++;
       }
+      if (s.kind == 'food' && isGraphFoodOrNoiseToken(label)) continue;
       satellites.add(GraphAiSatellite(kind: s.kind, label: label));
       if (satellites.length >= 16) break;
     }
@@ -156,5 +164,8 @@ highlights: max 4 short phrases about people/events/places. Skip food and meta h
     );
   }
 
-  static const _allowedKinds = {'person', 'place', 'organization', 'activity', 'goal', 'emotion'};
+  static const _allowedKinds = {
+    'person', 'place', 'organization', 'activity', 'goal', 'emotion',
+    'event', 'content', 'interest', 'food', 'hobby',
+  };
 }

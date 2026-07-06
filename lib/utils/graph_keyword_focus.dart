@@ -25,14 +25,26 @@ GraphNodeKind graphKindForKeyword(String keyword, List<Memory> matches, {String 
   return switch (classifyKeyword(keyword, matches.first, localeCode: localeCode)) {
     MemoryKeywordKind.person => GraphNodeKind.person,
     MemoryKeywordKind.place => GraphNodeKind.place,
+    MemoryKeywordKind.event => GraphNodeKind.event,
+    MemoryKeywordKind.interest => GraphNodeKind.interest,
+    MemoryKeywordKind.activity => GraphNodeKind.activity,
+    MemoryKeywordKind.food => GraphNodeKind.food,
+    MemoryKeywordKind.organization => GraphNodeKind.organization,
     MemoryKeywordKind.tag => GraphNodeKind.activity,
   };
 }
 
-/// 타임라인·회상 등에서 키워드 탭 → 관계망 포커스 탭으로 이동.
+/// 관계망 포커스(키워드·기억)를 해제하고 전체 그래프로 돌아갑니다.
+void clearGraphFocus(WidgetRef ref) {
+  ref.read(graphFocusMemoryIdProvider.notifier).state = null;
+  ref.read(graphFocusKeywordProvider.notifier).state = null;
+}
+
+/// 타임라인·회상 등에서 키워드 탭 → 관계망 키워드 포커스.
 void openGraphKeywordFocus(WidgetRef ref, String keyword) {
   final trimmed = keyword.trim();
   if (trimmed.isEmpty) return;
+  ref.read(graphFocusMemoryIdProvider.notifier).state = null;
   ref.read(graphFocusKeywordProvider.notifier).state = trimmed;
   ref.read(mainNavigationTabProvider.notifier).state = 2;
 }
@@ -75,13 +87,21 @@ void openGraphForMemories(WidgetRef ref, List<Memory> matches, String query) {
   openGraphKeywordFocus(ref, keyword);
 }
 
-/// 회상·상세에서 단일 기억의 관계망으로 이동합니다.
+/// 회상·상세에서 단일 기억의 관계망(기억 + 위성)으로 이동합니다.
 void openGraphForMemory(WidgetRef ref, Memory memory, {String? keyword}) {
-  final labels = userVisibleEntityLabels(memory);
-  final focus = (keyword?.trim().isNotEmpty == true)
-      ? keyword!.trim()
-      : (labels.isNotEmpty ? labels.first : memory.summary.trim());
-  if (focus.isEmpty) return;
-  ref.read(highlightedEntitiesProvider.notifier).state = labels.take(3).toList();
-  openGraphKeywordFocus(ref, focus);
+  if (keyword != null && keyword.trim().isNotEmpty) {
+    ref.read(highlightedEntitiesProvider.notifier).state = userVisibleEntityLabels(memory).take(3).toList();
+    openGraphKeywordFocus(ref, keyword.trim());
+    return;
+  }
+  ref.read(graphFocusKeywordProvider.notifier).state = null;
+  ref.read(graphFocusMemoryIdProvider.notifier).state = memory.id;
+  ref.read(highlightedEntitiesProvider.notifier).state =
+      userVisibleEntityLabels(memory).take(3).toList();
+  ref.read(mainNavigationTabProvider.notifier).state = 2;
+}
+
+/// 기억 포커스 모드로 관계망 탭 이동 (미리보기 시트 등).
+void openGraphMemoryFocus(WidgetRef ref, Memory memory) {
+  openGraphForMemory(ref, memory);
 }

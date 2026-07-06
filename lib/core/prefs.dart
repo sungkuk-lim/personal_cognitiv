@@ -10,6 +10,7 @@ import '../utils/graph_time_filter.dart';
 import '../utils/memory_input_category.dart';
 
 const String prefThemeMode = 'theme_mode';
+const String prefSeedColor = 'seed_color';
 const String prefGraphPositions = 'graph_node_positions';
 const String prefOcrEngineMode = 'ocr_engine_mode';
 const String prefOcrVisionQuality = 'ocr_vision_quality';
@@ -31,6 +32,7 @@ const String prefCompletionMilestoneNotified = 'completion_milestone_notified';
 const String prefLastMemoryInputCategory = 'last_memory_input_category';
 const String prefGraphAchievementsUnlocked = 'graph_achievements_unlocked';
 const String prefContactPersonAvatarsEnabled = 'contact_person_avatars_enabled';
+const String prefReplayCoachDone = 'replay_coach_done';
 
 bool readProactiveRecallEnabled(SharedPreferences prefs) =>
     prefs.getBool(prefProactiveRecallEnabled) ?? true;
@@ -79,6 +81,13 @@ ThemeMode readSavedThemeMode(SharedPreferences prefs) {
     default:
       return ThemeMode.system;
   }
+}
+
+Color readSeedColor(SharedPreferences prefs) =>
+    Color(prefs.getInt(prefSeedColor) ?? 0xFF673AB7);
+
+Future<void> writeSeedColor(SharedPreferences prefs, Color color) async {
+  await prefs.setInt(prefSeedColor, color.toARGB32());
 }
 
 Future<void> saveThemeMode(SharedPreferences prefs, ThemeMode mode) async {

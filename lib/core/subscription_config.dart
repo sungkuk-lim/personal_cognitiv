@@ -14,9 +14,12 @@ class SubscriptionConfig {
 
   static const List<String> proBenefitKeys = [
     'pro_benefit_cloud',
-    'pro_benefit_search',
-    'pro_benefit_vision',
+    'pro_benefit_insights',
+    'pro_benefit_composite',
+    'pro_benefit_recall',
+    'pro_benefit_wrapped',
+    'pro_benefit_theme_hub',
     'pro_benefit_graph_ai',
-    'pro_benefit_sync',
+    'pro_benefit_search',
   ];
 }

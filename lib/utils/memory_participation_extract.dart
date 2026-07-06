@@ -14,7 +14,7 @@ bool isSelfPersonToken(String token, String localeCode) {
 bool isSelfPersonLabel(String label, String localeCode) =>
     label == selfPersonGraphLabel(localeCode);
 
-/// 문장에서 「주어…는 [활동]을/를 …」 패턴으로 사람–활동 참여 관계 추출.
+/// 문장에서 「주어…는/이 [활동]을/를 …」 패턴으로 사람–활동 참여 관계 추출.
 List<({String person, String activity})> extractParticipationLinks(
   String content, {
   required String localeCode,
@@ -25,20 +25,48 @@ List<({String person, String activity})> extractParticipationLinks(
   final links = <({String person, String activity})>[];
   final seen = <String>{};
 
-  for (final match in RegExp(r'([^.!?\n]{2,72}?)는\s+([^,.]{0,80}?)(?:을|를)').allMatches(content)) {
-    final subjectsRaw = match.group(1)!.trim();
-    final verbPhrase = match.group(2)!;
-    if (subjectsRaw.length > 64) continue;
+  final patterns = [
+    RegExp(r'([^.!?\n]{2,72}?)(?:는|이)\s+([^,.]{0,80}?)(?:을|를)'),
+    RegExp(r'([^.!?\n]{2,72}?)(?:가)\s+([^,.]{0,80}?)(?:을|를)'),
+  ];
 
-    final activity = _resolveActivityLabel(verbPhrase, knownActivities);
-    if (activity == null) continue;
+  for (final pattern in patterns) {
+    for (final match in pattern.allMatches(content)) {
+      final subjectsRaw = match.group(1)!.trim();
+      final verbPhrase = match.group(2)!;
+      if (subjectsRaw.length > 64) continue;
 
+      final activity = _resolveActivityLabel(verbPhrase, knownActivities);
+      if (activity == null) continue;
+
+      for (final person in _parseSubjectTokens(subjectsRaw, localeCode)) {
+        final key = '$person::$activity';
+        if (seen.add(key)) {
+          links.add((person: person, activity: activity));
+        }
+      }
+    }
+  }
+
+  void addCohort(String subjectsRaw, String verbRaw) {
+    final activity = _resolveActivityLabel(verbRaw.trim(), knownActivities);
+    if (activity == null) return;
     for (final person in _parseSubjectTokens(subjectsRaw, localeCode)) {
       final key = '$person::$activity';
       if (seen.add(key)) {
         links.add((person: person, activity: activity));
       }
     }
+  }
+
+  final pairCohort = RegExp(r'([가-힣]+와\s+[가-힣]+)는\s+([가-힣A-Za-z]+)을').firstMatch(content);
+  if (pairCohort != null) {
+    addCohort(pairCohort.group(1)!, pairCohort.group(2)!);
+  }
+
+  final listCohort = RegExp(r'((?:[가-힣]+,\s*)+[가-힣]+)는\s+([가-힣A-Za-z]+)을').firstMatch(content);
+  if (listCohort != null) {
+    addCohort(listCohort.group(1)!, listCohort.group(2)!);
   }
 
   return links;
@@ -55,6 +83,7 @@ String? _resolveActivityLabel(String verbPhrase, Set<String> knownActivities) {
   for (final activity in knownActivities) {
     if (verbPhrase.contains(activity)) return activity;
   }
+  if (verbPhrase.contains('시험') && knownActivities.contains('시험')) return '시험';
   return null;
 }
 

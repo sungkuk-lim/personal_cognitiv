@@ -15,14 +15,16 @@ import '../../features/replay/replay_parallax.dart';
 import '../../models/memory.dart';
 import '../../providers/app_providers.dart';
 import '../../providers/memory_notifier.dart';
+import '../../utils/graph_keyword_focus.dart';
+import '../../utils/graph_satellite_chips.dart';
 import '../../utils/memory_image_memos.dart';
 import '../../utils/memory_image_paths.dart';
-import '../../utils/graph_keyword_focus.dart';
-import '../../utils/memory_keyword_ui.dart';
+import '../../utils/memory_video_paths.dart';
+import 'memory_focus_preview_sheet.dart';
+import 'replay_coach_mark.dart';
 import 'replay_insight_cards.dart';
 import 'replay_insight_section.dart';
 import '../pulse/memory_pulse_section.dart';
-import '../../utils/memory_video_paths.dart';
 
 /// 월별로 기억을 묶어 사진 썸네일과 함께 보여줍니다.
 class ReplayScreen extends ConsumerWidget {
@@ -72,7 +74,10 @@ class _ReplayTimelineViewState extends ConsumerState<ReplayTimelineView> with Re
     super.initState();
     _scrollController.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) refreshParallaxSections(context);
+      if (mounted) {
+        refreshParallaxSections(context);
+        showReplayCoachMarkIfNeeded(context, ref);
+      }
     });
   }
 
@@ -139,7 +144,9 @@ class _ReplayTimelineViewState extends ConsumerState<ReplayTimelineView> with Re
 
     final insightCards = buildReplayInsightCards(widget.memories, localeCode: widget.localeCode);
 
-    return NotificationListener<ScrollNotification>(
+    return RefreshIndicator(
+      onRefresh: () => ref.read(memoryListProvider.notifier).reload(),
+      child: NotificationListener<ScrollNotification>(
       onNotification: (notification) {
         if (notification is ScrollUpdateNotification || notification is ScrollEndNotification) {
           refreshParallaxSections(context);
@@ -148,6 +155,7 @@ class _ReplayTimelineViewState extends ConsumerState<ReplayTimelineView> with Re
       },
       child: ListView.builder(
         controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         itemCount: months.length + (insightCards.isNotEmpty ? 1 : 0) + 1,
         itemBuilder: (context, index) {
@@ -208,7 +216,16 @@ class _ReplayTimelineViewState extends ConsumerState<ReplayTimelineView> with Re
                                   photoCountLabel: photoCount > 1 ? _photoCountLabel(photoCount) : null,
                                   memo: memo,
                                   hasVideo: hasVideo,
+                                  localeCode: widget.localeCode,
                                   onTap: () => _openMemory(context, memory),
+                                  onLongPress: () => showMemoryFocusPreviewSheet(
+                                    context,
+                                    ref,
+                                    memory: memory,
+                                    imagePath: thumb,
+                                    hasVideo: hasVideo,
+                                    photoCount: photoCount,
+                                  ),
                                   onKeywordTap: (keyword) => openGraphKeywordFocus(ref, keyword),
                                   onOpenGraph: () => openGraphForMemory(ref, memory),
                                 ),
@@ -224,6 +241,7 @@ class _ReplayTimelineViewState extends ConsumerState<ReplayTimelineView> with Re
           );
         },
       ),
+    ),
     );
   }
 
@@ -294,7 +312,9 @@ class _ReplayTile extends ConsumerWidget {
     this.photoCountLabel,
     this.memo = '',
     this.hasVideo = false,
+    this.localeCode = 'ko',
     this.onTap,
+    this.onLongPress,
     this.onKeywordTap,
     this.onOpenGraph,
   });
@@ -305,7 +325,9 @@ class _ReplayTile extends ConsumerWidget {
   final String? photoCountLabel;
   final String memo;
   final bool hasVideo;
+  final String localeCode;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final void Function(String keyword)? onKeywordTap;
   final VoidCallback? onOpenGraph;
 
@@ -313,17 +335,20 @@ class _ReplayTile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final hasImage = imagePath != null && File(imagePath!).existsSync();
     final title = memory.summary.isNotEmpty ? memory.summary : memory.content;
-    final keywords = buildKeywordChips(
+    final t = ref.watch(translationsProvider);
+    final satellites = buildGraphSatelliteChips(
       memory,
       Theme.of(context).colorScheme,
-      maxCount: 3,
-      onKeywordTap: onKeywordTap,
+      localeCode: localeCode,
+      maxCount: 5,
+      onChipTap: (keyword, _) => onKeywordTap?.call(keyword),
     );
     return Card(
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(5, 5, 5, 8),
           child: Column(
@@ -388,9 +413,9 @@ class _ReplayTile extends ConsumerWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
               ),
-              if (keywords.isNotEmpty) ...[
+              if (satellites.isNotEmpty) ...[
                 const SizedBox(height: 6),
-                Wrap(spacing: 4, runSpacing: 4, children: keywords),
+                Wrap(spacing: 4, runSpacing: 4, children: satellites),
               ],
               if (onOpenGraph != null) ...[
                 const SizedBox(height: 8),
@@ -399,13 +424,24 @@ class _ReplayTile extends ConsumerWidget {
                   child: TextButton.icon(
                     onPressed: onOpenGraph,
                     icon: const Icon(Icons.hub_outlined, size: 16),
-                    label: Text(ref.watch(translationsProvider)['graph'] ?? '관계망'),
+                    label: Text(t['graph'] ?? '관계망'),
                     style: TextButton.styleFrom(
                       visualDensity: VisualDensity.compact,
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     ),
                   ),
                 ),
+                if (onLongPress != null && t['replay_graph_long_press_hint'] != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 2),
+                    child: Text(
+                      t['replay_graph_long_press_hint']!,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                      ),
+                    ),
+                  ),
               ],
             ],
           ),

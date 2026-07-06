@@ -18,6 +18,8 @@ final selectedGraphNodeProvider = StateProvider<String?>((ref) => null);
 final selectedMemoryIdProvider = StateProvider<String?>((ref) => null);
 /// 관계망 키워드 포커스 모드 (null = 전체 그래프).
 final graphFocusKeywordProvider = StateProvider<String?>((ref) => null);
+/// 관계망 기억 포커스 — 단일 기억 + 위성만 표시 (키워드 포커스보다 우선).
+final graphFocusMemoryIdProvider = StateProvider<String?>((ref) => null);
 /// 하단 탭 인덱스 (0 타임라인, 1 검색, 2 관계망, 3 회상).
 final mainNavigationTabProvider = StateProvider<int>((ref) => 0);
 final proactiveRecallEnabledProvider = StateProvider<bool>((ref) => true);

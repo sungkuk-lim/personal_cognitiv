@@ -22,10 +22,26 @@ import '../../utils/memory_entity_extract.dart';
 import '../../utils/memory_participation_extract.dart';
 import '../../utils/entity_canonical.dart';
 import '../../utils/memory_graph_semantics.dart';
+import 'graph_node_kind_map.dart';
 import 'graph_chat_save.dart';
 
-/// 관계망 노드 종류 — 기억·이벤트 허브, 위성은 사람·장소·활동·목표·감정.
-enum GraphNodeKind { memory, group, eventHub, person, place, activity, goal, emotion }
+/// 관계망 노드 종류 — 기억·이벤트 허브 + 10대 위성 카테고리.
+enum GraphNodeKind {
+  memory,
+  group,
+  eventHub,
+  person,
+  place,
+  activity,
+  event,
+  content,
+  interest,
+  food,
+  hobby,
+  organization,
+  goal,
+  emotion,
+}
 
 /// 위성 펼침 필터 — 사람·장소만 또는 전체.
 enum GraphSatelliteExpandMode { person, place, personAndPlace, all }
@@ -68,6 +84,12 @@ Color graphNodeKindColor(GraphNodeKind kind) {
     GraphNodeKind.person => AppGraphColors.person,
     GraphNodeKind.place => AppGraphColors.place,
     GraphNodeKind.activity => AppGraphColors.activity,
+    GraphNodeKind.event => AppGraphColors.event,
+    GraphNodeKind.content => AppGraphColors.content,
+    GraphNodeKind.interest => AppGraphColors.interest,
+    GraphNodeKind.food => AppGraphColors.food,
+    GraphNodeKind.hobby => AppGraphColors.hobby,
+    GraphNodeKind.organization => AppGraphColors.organization,
     GraphNodeKind.goal => AppGraphColors.memory,
     GraphNodeKind.emotion => const Color(0xFFFF7043),
     GraphNodeKind.eventHub => AppGraphColors.eventHub,
@@ -155,9 +177,9 @@ GraphLayout buildMemoryGraphLayout(
   }
 
   void addNode(GraphNodeData node) {
-    if (node.kind == GraphNodeKind.person ||
-        node.kind == GraphNodeKind.place ||
-        node.kind == GraphNodeKind.activity) {
+    if (node.kind != GraphNodeKind.memory &&
+        node.kind != GraphNodeKind.group &&
+        node.kind != GraphNodeKind.eventHub) {
       final dedupeKey = '${node.kind.name}::${node.title.trim()}';
       final existingId = entityTitleToNodeId[dedupeKey];
       if (existingId != null && existingId != node.id) {
@@ -197,7 +219,25 @@ GraphLayout buildMemoryGraphLayout(
               e.memoryToMemory == memoryToMemory &&
               e.bridgeLink == bridge),
     );
-    if (exists) return;
+    if (exists) {
+      if (label != null) {
+        final idx = edges.indexWhere((e) => e.fromId == from && e.toId == to);
+        if (idx >= 0 && edges[idx].label == null) {
+          final prev = edges[idx];
+          edges[idx] = GraphEdgeData(
+            fromId: prev.fromId,
+            toId: prev.toId,
+            color: color,
+            memoryToMemory: prev.memoryToMemory,
+            semanticLink: prev.semanticLink,
+            bridgeLink: prev.bridgeLink,
+            label: label,
+            relationEdge: relationEdge || prev.relationEdge,
+          );
+        }
+      }
+      return;
+    }
     edges.add(GraphEdgeData(
       fromId: from,
       toId: to,
@@ -433,6 +473,11 @@ KeywordFocusGraphResult buildKeywordFocusGraphLayout(
       : switch (classifyKeyword(k, shown.first, localeCode: localeCode)) {
           MemoryKeywordKind.person => GraphNodeKind.person,
           MemoryKeywordKind.place => GraphNodeKind.place,
+          MemoryKeywordKind.event => GraphNodeKind.event,
+          MemoryKeywordKind.interest => GraphNodeKind.interest,
+          MemoryKeywordKind.activity => GraphNodeKind.activity,
+          MemoryKeywordKind.food => GraphNodeKind.food,
+          MemoryKeywordKind.organization => GraphNodeKind.organization,
           MemoryKeywordKind.tag => GraphNodeKind.activity,
         };
   final hubColor = switch (hubKind) {
@@ -459,18 +504,6 @@ KeywordFocusGraphResult buildKeywordFocusGraphLayout(
     ),
   ];
   final edges = <GraphEdgeData>[];
-  final graphNodeIds = nodes.map((n) => n.id).toSet();
-  final claimedLabels = <String, String>{};
-  final globalEntityIds = <String, String>{};
-
-  String globalEntityId(String prefix, String label) {
-    return globalEntityIds.putIfAbsent('$prefix::$label', () => '${prefix}_$label');
-  }
-
-  void addNode(GraphNodeData node) {
-    nodes.add(node);
-    graphNodeIds.add(node.id);
-  }
 
   void link(String from, String to, Color color, {String? label, bool relationEdge = false}) {
     edges.add(GraphEdgeData(fromId: from, toId: to, color: color, label: label, relationEdge: relationEdge));
@@ -484,10 +517,9 @@ KeywordFocusGraphResult buildKeywordFocusGraphLayout(
       fullAddressCache,
       localeCode: localeCode,
     );
-    final fragment = freshGraphFragmentForMemory(memory, graphFragments[memory.id]);
     final title = graphMeaningSentence(memory, localeCode: localeCode);
 
-    addNode(GraphNodeData(
+    nodes.add(GraphNodeData(
       id: memoryId,
       title: title,
       subtitle: _nodeCardSubtitle(GraphNodeKind.memory, localeCode),
@@ -499,22 +531,6 @@ KeywordFocusGraphResult buildKeywordFocusGraphLayout(
       layoutClusterId: clusterId,
     ));
     link(hubId, memoryId, hubColor.withValues(alpha: 0.7));
-
-    _attachSatelliteNodes(
-      anchorNodeId: hubId,
-      memory: memory,
-      fragment: fragment,
-      clusterId: clusterId,
-      clusterColor: hubColor,
-      localeCode: localeCode,
-      eventTitle: k,
-      claimedLabels: claimedLabels,
-      graphNodeIds: graphNodeIds,
-      addNode: addNode,
-      link: link,
-      globalEntityId: globalEntityId,
-      filterMode: GraphSatelliteExpandMode.all,
-    );
   }
 
   return KeywordFocusGraphResult(
@@ -522,6 +538,50 @@ KeywordFocusGraphResult buildKeywordFocusGraphLayout(
     totalCount: total,
     shownCount: shown.length,
   );
+}
+
+/// 기억 포커스 — 선택한 기억 1건과 그 위성(인물·장소·활동 등)만 표시합니다.
+class MemoryFocusGraphResult {
+  const MemoryFocusGraphResult({
+    required this.layout,
+    required this.memoryId,
+    required this.title,
+  });
+
+  final GraphLayout layout;
+  final String memoryId;
+  final String title;
+}
+
+MemoryFocusGraphResult buildMemoryFocusGraphLayout(
+  Memory memory, {
+  Map<String, String> placeCache = const {},
+  Map<String, String> fullAddressCache = const {},
+  Map<String, GraphMemoryFragment> graphFragments = const {},
+  String localeCode = 'ko',
+  int Function(String memoryId) photoCountFor = _defaultPhotoCount,
+  bool Function(String memoryId) hasVideoFor = _defaultHasVideo,
+}) {
+  final layout = buildMemoryGraphLayout(
+    [memory],
+    placeCache: placeCache,
+    fullAddressCache: fullAddressCache,
+    graphFragments: graphFragments,
+    localeCode: localeCode,
+    photoCountFor: photoCountFor,
+    hasVideoFor: hasVideoFor,
+    satelliteExpansions: {memory.id: GraphSatelliteExpandMode.all},
+    collapseSatellitesByDefault: false,
+    maxSemanticLinksPerMemory: 0,
+  );
+  final title = graphMeaningSentence(memory, localeCode: localeCode);
+  return MemoryFocusGraphResult(layout: layout, memoryId: memory.id, title: title);
+}
+
+Size memoryFocusCanvasSize(int nodeCount) {
+  if (nodeCount <= 6) return const Size(900, 800);
+  if (nodeCount <= 12) return const Size(1100, 900);
+  return const Size(1300, 1000);
 }
 
 Map<String, Offset> initialKeywordFocusPositions(List<GraphNodeData> nodes, Size canvasSize) {
@@ -591,78 +651,122 @@ void _attachSatelliteNodes({
     aiFragment: fragment,
     hubTitle: eventTitle,
   );
-  final people = satellites.people;
 
-  void attachMany(String kindPrefix, GraphNodeKind kind, List<String> labels, {required int max}) {
+  void attachMany(String kindPrefix, GraphNodeKind kind, List<String> labels) {
     if (!_satelliteKindAllowed(kindPrefix, filterMode)) return;
+    final max = graphSatelliteMaxForPrefix(kindPrefix);
     for (final label in labels.take(max)) {
       final id = globalEntityId(kindPrefix, label);
-      if (!graphNodeIds.contains(id)) {
-        if (shouldClaimSatelliteLabel(claimedLabels, label, kindPrefix)) {
-          claimSatelliteLabel(claimedLabels, label, kindPrefix);
-        }
+      final exists = graphNodeIds.contains(id);
+      final canClaim = shouldClaimSatelliteLabel(claimedLabels, label, kindPrefix);
+      final isSharedKind = kindPrefix == 'person' || kindPrefix == 'place';
+      if (!exists) {
+        if (!canClaim) continue;
+        claimSatelliteLabel(claimedLabels, label, kindPrefix);
         addNode(GraphNodeData(
           id: id,
           title: label,
-          subtitle: _nodeCardSubtitle(kind, localeCode),
+          subtitle: graphSatelliteKindLabel(kindPrefix, localeCode),
           color: graphNodeKindColor(kind),
           kind: kind,
           size: const Size(112, 48),
           layoutClusterId: clusterId,
         ));
         graphNodeIds.add(id);
+      } else if (!isSharedKind && !canClaim) {
+        continue;
       }
       link(anchorNodeId, id, clusterColor);
     }
   }
 
-  attachMany(
-    'person',
-    GraphNodeKind.person,
-    people,
-    max: kGraphMaxPeopleSatellites,
+  attachMany('person', GraphNodeKind.person, satellites.people);
+  attachMany('place', GraphNodeKind.place, satellites.places);
+  attachMany('organization', GraphNodeKind.organization, satellites.organizations);
+  attachMany('event', GraphNodeKind.event, satellites.events);
+  attachMany('activity', GraphNodeKind.activity, satellites.activities);
+  attachMany('content', GraphNodeKind.content, satellites.contents);
+  attachMany('interest', GraphNodeKind.interest, satellites.interests);
+  attachMany('food', GraphNodeKind.food, satellites.food);
+  attachMany('hobby', GraphNodeKind.hobby, satellites.hobbies);
+  attachMany('goal', GraphNodeKind.goal, satellites.goals);
+  attachMany('emotion', GraphNodeKind.emotion, satellites.emotions);
+
+  for (final rel in effectiveRelationsForMemory(memory, localeCode: localeCode)) {
+    final obj = canonicalEntityLabel(rel.object);
+    if (obj.isEmpty) continue;
+    final sub = canonicalEntityLabel(rel.subject);
+    final kindPrefix = switch (rel.predicate) {
+      '방문' => 'place',
+      '감정' => 'emotion',
+      '식사' => 'food',
+      '응시' || '공부' => 'event',
+      '응원' => 'person',
+      _ => _kindPrefixForRelationObject(obj, memory, localeCode),
+    };
+    final resolvedObj = kindPrefix == 'event' && satellites.events.isNotEmpty && obj.contains('시험')
+        ? satellites.events.first
+        : obj;
+    final kind = graphNodeKindForSatellitePrefix(kindPrefix);
+    final targetId = globalEntityId(kindPrefix, resolvedObj);
+    if (!graphNodeIds.contains(targetId)) continue;
+
+    final fromId = switch (rel.predicate) {
+      '응원' when isSelfPersonLabel(sub, localeCode) => anchorNodeId,
+      _ when sub.isNotEmpty &&
+              sub != '나' &&
+              graphNodeIds.contains(globalEntityId('person', sub)) =>
+        globalEntityId('person', sub),
+      _ => anchorNodeId,
+    };
+    link(fromId, targetId, graphNodeKindColor(kind), label: rel.predicate, relationEdge: true);
+  }
+
+  _attachSelfPersonContext(
+    memory: memory,
+    localeCode: localeCode,
+    anchorNodeId: anchorNodeId,
+    clusterId: clusterId,
+    clusterColor: clusterColor,
+    otherPeople: satellites.people,
+    graphNodeIds: graphNodeIds,
+    addNode: addNode,
+    link: link,
+    globalEntityId: globalEntityId,
   );
-  attachMany('place', GraphNodeKind.place, satellites.places, max: kGraphMaxPlaceSatellites);
-  attachMany('organization', GraphNodeKind.goal, satellites.organizations, max: kGraphMaxOrgSatellites);
-  attachMany('activity', GraphNodeKind.activity, satellites.activities, max: 2);
-  attachMany('goal', GraphNodeKind.goal, satellites.goals, max: 1);
-  attachMany('emotion', GraphNodeKind.emotion, satellites.emotions, max: 1);
 
   final participationLinks = extractParticipationLinks(
     memory.content,
     localeCode: localeCode,
-    knownActivities: satellites.activities.toSet(),
+    knownActivities: {
+      ...satellites.activities,
+      ...satellites.events,
+      '시험',
+      '공부',
+    }.where((s) => s.trim().isNotEmpty).toSet(),
   );
   for (final entry in participationLinks) {
     final personId = globalEntityId('person', entry.person);
-    final activityId = globalEntityId('activity', entry.activity);
-    if (graphNodeIds.contains(personId) && graphNodeIds.contains(activityId)) {
-      link(
-        personId,
-        activityId,
-        Color.lerp(graphNodeKindColor(GraphNodeKind.person), graphNodeKindColor(GraphNodeKind.activity), 0.5)!,
-      );
-    }
-  }
+    final hasExamRelation = effectiveRelationsForMemory(memory, localeCode: localeCode).any(
+      (r) => r.predicate == '응시' && canonicalEntityLabel(r.subject) == entry.person,
+    );
+    if (hasExamRelation) continue;
 
-  for (final rel in relationsForMemory(memory)) {
-    final obj = canonicalEntityLabel(rel.object);
-    if (obj.isEmpty) continue;
-    final kindPrefix = switch (rel.predicate) {
-      '방문' => 'place',
-      '감정' => 'emotion',
-      '식사' => 'activity',
-      _ => 'person',
-    };
-    final kind = switch (rel.predicate) {
-      '방문' => GraphNodeKind.place,
-      '감정' => GraphNodeKind.emotion,
-      '식사' => GraphNodeKind.activity,
-      _ => GraphNodeKind.person,
-    };
-    final targetId = globalEntityId(kindPrefix, obj);
-    if (!graphNodeIds.contains(targetId)) continue;
-    link(anchorNodeId, targetId, graphNodeKindColor(kind), label: rel.predicate, relationEdge: true);
+    final activityPrefix = satellites.events.any((e) => e.contains(entry.activity) || entry.activity.contains(e))
+        ? 'event'
+        : 'activity';
+    final activityLabel = satellites.events.isNotEmpty && entry.activity.contains('시험')
+        ? satellites.events.first
+        : entry.activity;
+    final activityId = globalEntityId(activityPrefix, activityLabel);
+    if (!graphNodeIds.contains(personId) || !graphNodeIds.contains(activityId)) continue;
+    link(
+      personId,
+      activityId,
+      Color.lerp(graphNodeKindColor(GraphNodeKind.person), graphColorForSatellitePrefix(activityPrefix), 0.5)!,
+      label: localeCode == 'ko' ? '참여' : 'join',
+      relationEdge: true,
+    );
   }
 }
 
@@ -671,6 +775,62 @@ List<String> _peopleFromMemory(Memory memory, {String localeCode = 'ko'}) {
       .people
       .where((p) => !isSelfPersonLabel(p, localeCode))
       .toList();
+}
+
+void _attachSelfPersonContext({
+  required Memory memory,
+  required String localeCode,
+  required String anchorNodeId,
+  required String clusterId,
+  required Color clusterColor,
+  required List<String> otherPeople,
+  required Set<String> graphNodeIds,
+  required void Function(GraphNodeData node) addNode,
+  required void Function(String from, String to, Color color, {String? label, bool relationEdge}) link,
+  required String Function(String prefix, String label) globalEntityId,
+}) {
+  if (!_satelliteKindAllowed('person', GraphSatelliteExpandMode.all)) return;
+  if (otherPeople.isEmpty) return;
+
+  final selfInSpeech = extractPeopleFromMemoryText(memory.content)
+      .any((p) => isSelfPersonLabel(p, localeCode));
+  if (!selfInSpeech) return;
+
+  final self = selfPersonGraphLabel(localeCode);
+  final selfId = globalEntityId('person', self);
+  if (!graphNodeIds.contains(selfId)) {
+    addNode(GraphNodeData(
+      id: selfId,
+      title: self,
+      subtitle: localeCode == 'ko' ? '나' : 'Me',
+      color: AppGraphColors.selfPerson,
+      kind: GraphNodeKind.person,
+      size: const Size(104, 44),
+      layoutClusterId: clusterId,
+    ));
+    graphNodeIds.add(selfId);
+    link(anchorNodeId, selfId, AppGraphColors.selfPerson.withValues(alpha: 0.85));
+  }
+
+  for (final person in otherPeople.take(4)) {
+    final personId = globalEntityId('person', person);
+    if (!graphNodeIds.contains(personId)) continue;
+    if (memoryHasRelation(memory, '응원', person, subject: self, localeCode: localeCode)) {
+      link(selfId, personId, AppGraphColors.relationEdge, label: '응원', relationEdge: true);
+    } else if (isFamilyRelationTerm(person)) {
+      link(selfId, personId, AppGraphColors.relationEdge, label: '가족', relationEdge: true);
+    }
+  }
+}
+
+String _kindPrefixForRelationObject(String obj, Memory memory, String localeCode) {
+  final bundle = extractMemoryEntities(memory, localeCode: localeCode);
+  if (bundle.places.any((p) => entityLabelMatchesKeyword(p, obj))) return 'place';
+  if (bundle.events.any((e) => entityLabelMatchesKeyword(e, obj))) return 'event';
+  if (bundle.interests.any((i) => entityLabelMatchesKeyword(i, obj))) return 'interest';
+  if (bundle.activities.any((a) => entityLabelMatchesKeyword(a, obj))) return 'activity';
+  if (bundle.people.any((p) => entityLabelMatchesKeyword(p, obj))) return 'person';
+  return 'activity';
 }
 
 bool _memoriesSharePeople(Memory a, Memory b, {String localeCode = 'ko'}) {
@@ -699,8 +859,14 @@ String _kindLabel(GraphNodeKind kind, String localeCode) {
       GraphNodeKind.eventHub => '이벤트',
       GraphNodeKind.person => '사람',
       GraphNodeKind.place => '장소',
-      GraphNodeKind.activity => '이벤트',
-      GraphNodeKind.goal => '조직',
+      GraphNodeKind.activity => '활동',
+      GraphNodeKind.event => '이벤트',
+      GraphNodeKind.content => '콘텐츠',
+      GraphNodeKind.interest => '관심사',
+      GraphNodeKind.food => '음식',
+      GraphNodeKind.hobby => '취미',
+      GraphNodeKind.organization => '조직',
+      GraphNodeKind.goal => '목표',
       GraphNodeKind.emotion => '감정',
     };
   }
@@ -711,6 +877,12 @@ String _kindLabel(GraphNodeKind kind, String localeCode) {
     GraphNodeKind.person => 'Person',
     GraphNodeKind.place => 'Place',
     GraphNodeKind.activity => 'Activity',
+    GraphNodeKind.event => 'Event',
+    GraphNodeKind.content => 'Content',
+    GraphNodeKind.interest => 'Interest',
+    GraphNodeKind.food => 'Food',
+    GraphNodeKind.hobby => 'Hobby',
+    GraphNodeKind.organization => 'Organization',
     GraphNodeKind.goal => 'Goal',
     GraphNodeKind.emotion => 'Emotion',
   };
@@ -747,7 +919,15 @@ void _pruneOrphanEntityNodes(List<GraphNodeData> nodes, List<GraphEdgeData> edge
     if (node.kind == GraphNodeKind.group || node.kind == GraphNodeKind.memory) return false;
     return node.kind == GraphNodeKind.person ||
         node.kind == GraphNodeKind.place ||
-        node.kind == GraphNodeKind.activity;
+        node.kind == GraphNodeKind.activity ||
+        node.kind == GraphNodeKind.event ||
+        node.kind == GraphNodeKind.content ||
+        node.kind == GraphNodeKind.interest ||
+        node.kind == GraphNodeKind.food ||
+        node.kind == GraphNodeKind.hobby ||
+        node.kind == GraphNodeKind.organization ||
+        node.kind == GraphNodeKind.goal ||
+        node.kind == GraphNodeKind.emotion;
   });
 }
 
@@ -792,12 +972,7 @@ void _attachGraphNotesToAnchors({
       if (isMediaOnlyGraphNote(note)) continue;
       if (hubId == null) continue;
 
-      final kind = switch (prefix) {
-        'person' => GraphNodeKind.person,
-        'place' => GraphNodeKind.place,
-        'activity' => GraphNodeKind.activity,
-        _ => GraphNodeKind.goal,
-      };
+      final kind = graphNodeKindForSatellitePrefix(prefix);
       addNode(GraphNodeData(
         id: anchorId,
         title: anchor,
@@ -1113,8 +1288,8 @@ Size graphCanvasSize(int layoutClusterCount) {
   final cols = math.max(1, math.sqrt(layoutClusterCount).ceil());
   final rows = (layoutClusterCount / cols).ceil();
   return Size(
-    math.max(1200, cols * 400.0 + 440.0),
-    math.max(900, rows * 340.0 + 440.0),
+    math.max(1320, cols * 460.0 + 520.0),
+    math.max(980, rows * 400.0 + 520.0),
   );
 }
 
@@ -1133,13 +1308,13 @@ Map<String, Offset> initialGraphPositions(
 
   final clusterKeys = layoutClusters.keys.toList();
   final cols = math.max(1, math.sqrt(clusterKeys.length).ceil());
-  const spacingX = 400.0;
-  const spacingY = 340.0;
+  const spacingX = 460.0;
+  const spacingY = 400.0;
 
   for (var i = 0; i < clusterKeys.length; i++) {
     final col = i % cols;
     final row = i ~/ cols;
-    final center = Offset(240 + col * spacingX, 240 + row * spacingY);
+    final center = Offset(280 + col * spacingX, 280 + row * spacingY);
     final members = layoutClusters[clusterKeys[i]]!;
     final hub = members.where((n) => n.kind == GraphNodeKind.group).toList();
     final memories = members.where((n) => n.kind == GraphNodeKind.memory).toList();
@@ -1153,7 +1328,7 @@ Map<String, Offset> initialGraphPositions(
       positions[hub.first.id] = center;
       for (var m = 0; m < memories.length; m++) {
         final angle = (2 * math.pi * m / math.max(memories.length, 1)) - math.pi / 2;
-        positions[memories[m].id] = center + Offset(math.cos(angle) * 108, math.sin(angle) * 82);
+        positions[memories[m].id] = center + Offset(math.cos(angle) * 124, math.sin(angle) * 96);
       }
     } else if (memories.length == 1) {
       positions[memories.first.id] = center;
@@ -1165,11 +1340,17 @@ Map<String, Offset> initialGraphPositions(
     }
 
     for (var s = 0; s < satellites.length; s++) {
-      final angle = (2 * math.pi * s / math.max(satellites.length, 1)) + math.pi / 8;
+      const slotsPerRing = 8;
+      final ring = s ~/ slotsPerRing;
+      final slot = s % slotsPerRing;
+      final angle = (2 * math.pi * slot / slotsPerRing) + math.pi / 8 + ring * 0.18;
+      final orbitX = 198.0 + ring * 56.0;
+      final orbitY = 156.0 + ring * 44.0;
       final anchor = hub.isNotEmpty
           ? center
           : (memories.isNotEmpty ? positions[memories.first.id]! : center);
-      positions[satellites[s].id] = anchor + Offset(math.cos(angle) * 168, math.sin(angle) * 132);
+      positions[satellites[s].id] =
+          anchor + Offset(math.cos(angle) * orbitX, math.sin(angle) * orbitY);
     }
 
     for (final noteNode in entityNotes) {

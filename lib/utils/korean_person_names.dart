@@ -1,4 +1,5 @@
 import 'ocr_utils.dart';
+import 'memory_semantic_extract.dart';
 
 /// 인물 이름으로 쓰이기 어려운 한국어 토큰 (동사·부사·일반명사).
 const koreanPersonNameStopWords = {
@@ -7,10 +8,45 @@ const koreanPersonNameStopWords = {
   '놀러', '왔다', '갔다', '만났', '먹었', '했던', '이번', '다음', '그냥', '시원',
   '놀러왔다', '너무시원해', '너무시원', '기분', '느낌', '생각', '이야기', '말했',
   '월영', '안동', '경주', '서울', '부산', '대구', '인천', '광주', '대전', '울산',
-  '연락', '다음날', '아직도', '아직', '혼자', '집으로', '그날', '여행', '추억',
+  '연락', '다음날', '아직도', '아직', '혼자', '집으로', '그날', '여행', '추억', '기억',
   '장어', '조개', '술', '밤', '시쯤', '행동', '의문', '짐작', '이상', '실망',
   '남긴다', '모른다', '짐작만', '혼자사', '장어구', '조개구', '식구들', '이렇게',
+  '둘', '셋', '넷', '그', '이', '저',
 };
+
+/// 대명사·지시어 + 조사 형태.
+bool isKoreanPronounWithParticle(String raw) {
+  final v = raw.trim();
+  return RegExp(r'^(?:둘|셋|넷|그|이|저|우리|너희|그녀|그들)(?:은|는|이|가|을|를|과|와|도|만|한테|에게)?$').hasMatch(v);
+}
+
+/// 동사 활용·조사 찌꺼기 — 인물/장소 노드에서 제외.
+bool isGraphMorphologyJunkToken(String raw) {
+  final trimmed = raw.trim().replaceAll(RegExp(r'\s+'), ' ');
+  if (trimmed.isEmpty) return true;
+  if (isKoreanPronounWithParticle(trimmed)) return true;
+  final v = stripTrailingKoreanParticles(trimmed);
+  if (v.isEmpty) return true;
+  if (koreanPersonNameStopWords.contains(v)) return true;
+  if (RegExp(r'^[을를이가은는]$').hasMatch(v)) return true;
+  if (RegExp(r'^[을를이가]\s').hasMatch(v)) return true;
+  if (RegExp(r'(?:았|었|였)(?:고|으며|서|니)?$').hasMatch(v)) return true;
+  if (RegExp(r'(?:받았|했|됐|갔|왔|봤|먹었|만난|추천|가기|즐긴|했다)$').hasMatch(v)) return true;
+  if (RegExp(r'(?:이고|이며|하고|으며|라고|다고|면서)$').hasMatch(v)) return true;
+  if (v == '추천' || v.endsWith('추천')) return true;
+  return false;
+}
+
+/// 「천」 접미가 실제 지명이 아닌 일반어(추천 등).
+bool isMisleadingPlaceChonToken(String word) {
+  final v = word.trim();
+  if (v.isEmpty) return false;
+  const blocked = {'추천', '만원', '백만', '천만', '오천', '이천'};
+  if (blocked.contains(v)) return true;
+  if (isGraphMorphologyJunkToken(v)) return true;
+  if (v.contains(' ') && v.split(' ').any(isMisleadingPlaceChonToken)) return true;
+  return false;
+}
 
 /// 가족·친척 호칭 — 인명 규칙과 별도로 관계망 인물로 인정.
 const koreanFamilyRelationTerms = {
@@ -22,6 +58,68 @@ const koreanFamilyRelationTerms = {
 bool isFamilyRelationTerm(String raw) {
   final name = stripTrailingKoreanParticles(raw.trim());
   return koreanFamilyRelationTerms.contains(name);
+}
+
+/// 「예린엄마」「태민아빠」「애들할머니」 등 아이·관계 접두 + 역할 접미 복합 호칭.
+const kCompoundParentRoleSuffixes = [
+  '엄마', '아빠', '할아버지', '할머니', '고모', '삼촌', '이모',
+];
+
+bool isCompoundParentTerm(String raw) {
+  final t = stripTrailingKoreanParticles(raw.trim());
+  if (t.isEmpty || koreanFamilyRelationTerms.contains(t)) return false;
+  for (final suffix in kCompoundParentRoleSuffixes) {
+    if (t.endsWith(suffix) && t.length > suffix.length) {
+      final prefix = t.substring(0, t.length - suffix.length);
+      if (RegExp(r'^[가-힣]{1,8}$').hasMatch(prefix)) return true;
+    }
+  }
+  return false;
+}
+
+List<String> extractCompoundParentTermsFromText(String text) {
+  final value = text.trim();
+  if (value.isEmpty) return [];
+
+  final found = <String>[];
+  final seen = <String>{};
+  final suffixPattern = kCompoundParentRoleSuffixes.map(RegExp.escape).join('|');
+  final pattern = RegExp(
+    '([가-힣]{1,8})($suffixPattern)(?:과|와|랑|이랑|을|를|의|에게|한테|님|씨|도|만|하고|이|가|은|는)?',
+  );
+  for (final match in pattern.allMatches(value)) {
+    final label = '${match.group(1)}${match.group(2)}';
+    if (seen.add(label)) found.add(label);
+  }
+  return found;
+}
+
+/// 가족 접미(엄마·아빠)가 복합 호칭 안에 묻혀 있는지 — 「예린엄마」 속 「엄마」 단독 추출 방지.
+bool isFamilyTermEmbeddedInCompound(String text, String term) {
+  if (!koreanFamilyRelationTerms.contains(term)) return false;
+  if (term.length > 3) return false;
+  return RegExp('[가-힣]{1,8}${RegExp.escape(term)}').hasMatch(text);
+}
+
+/// 「아들이」「엄마와」처럼 조사가 붙은 가족 호칭을 본문에서 찾습니다.
+List<String> extractFamilyRelationTermsFromText(String text) {
+  final value = text.trim();
+  if (value.isEmpty) return [];
+
+  final compounds = extractCompoundParentTermsFromText(value).toSet();
+  final found = <String>[];
+  final seen = <String>{};
+  for (final term in koreanFamilyRelationTerms) {
+    if (compounds.any((c) => c.endsWith(term) && c.length > term.length)) continue;
+    if (isFamilyTermEmbeddedInCompound(value, term)) continue;
+    final pattern = RegExp(
+      '(?<![가-힣])${RegExp.escape(term)}(?:이|가|은|는|과|와|랑|이랑|을|를|의|에게|한테|님|씨|도|만|하고)?(?=[\\s,.!?]|\\\$)',
+    );
+    if (pattern.hasMatch(value) && seen.add(term)) {
+      found.add(term);
+    }
+  }
+  return found;
 }
 
 /// 조사·어미 꼬리(는, 을, …)를 벗겨 이름·호칭 후보를 정리합니다.
@@ -39,8 +137,10 @@ String stripTrailingKoreanParticles(String raw) {
 
   const shortParticles = ['는', '은', '을', '를', '과', '와', '도', '만', '에'];
   for (final p in shortParticles) {
-    if (name.endsWith(p) && name.length > p.length + 1) {
-      name = name.substring(0, name.length - p.length);
+    if (!name.endsWith(p) || name.length <= p.length) continue;
+    final stem = name.substring(0, name.length - p.length);
+    if (name.length > p.length + 1 || koreanPersonNameStopWords.contains(stem)) {
+      name = stem;
       break;
     }
   }
@@ -63,6 +163,7 @@ bool isNonPlaceGraphToken(String word) {
 
 bool looksLikeKoreanPlaceName(String word) {
   if (isNonPlaceGraphToken(word)) return false;
+  if (isMisleadingPlaceChonToken(word)) return false;
   if (word.length > 20) return false;
   if (word.contains(' ') && word.split(' ').length > 3) return false;
   if (word.endsWith('리') && word.length >= 3) return true;
@@ -79,17 +180,22 @@ bool looksLikeListedPersonToken(String word) {
   if (blockedSuffixes.any(word.endsWith)) return false;
   if (word.endsWith('구') && word.length == 3) return false;
   if (RegExp(r'(?:한다|했다|긴다|는다|겠다|싶다)$').hasMatch(word)) return false;
+  if (isGraphMorphologyJunkToken(word)) return false;
   return true;
 }
 
 /// 2~4글자 한글 이름 후보인지 검사합니다.
 bool isLikelyKoreanPersonName(String raw) {
   final name = normalizeKoreanPersonName(stripTrailingKoreanParticles(raw));
+  if (isKoreanPronounWithParticle(raw.trim())) return false;
+  if (isKnownFoodLabel(name)) return false;
+  if (isKnownContentLabel(name)) return false;
   if (isFamilyRelationTerm(name)) return true;
   if (name.length < 2 || name.length > 4) return false;
   if (!RegExp(r'^[가-힣]+$').hasMatch(name)) return false;
   if (koreanPersonNameStopWords.contains(name)) return false;
   if (RegExp(r'(?:한다|했다|긴다|는다|겠다|싶다)$').hasMatch(name)) return false;
+  if (isGraphMorphologyJunkToken(name)) return false;
   if (looksLikeKoreanPlaceName(name)) {
     if (name.length <= 3 && (name.endsWith('호') || name.endsWith('교'))) {
       // 인명과 겹치는 짧은 장소 접미사(대호·월영 등)는 인명 우선.

@@ -27,15 +27,6 @@ if (Test-Path $secretsPath) {
     if ($secrets.REVENUECAT_ANDROID_KEY) {
         $defines += "--dart-define=REVENUECAT_ANDROID_KEY=$($secrets.REVENUECAT_ANDROID_KEY)"
     }
-    if ($secrets.AI_OMAKASE_API_KEY) {
-        $defines += "--dart-define=AI_OMAKASE_API_KEY=$($secrets.AI_OMAKASE_API_KEY)"
-    }
-    if ($secrets.AI_OMAKASE_STT_URL) {
-        $defines += "--dart-define=AI_OMAKASE_STT_URL=$($secrets.AI_OMAKASE_STT_URL)"
-    }
-    if ($secrets.AI_OMAKASE_STT_MODEL) {
-        $defines += "--dart-define=AI_OMAKASE_STT_MODEL=$($secrets.AI_OMAKASE_STT_MODEL)"
-    }
 }
 
 flutter build appbundle --release @defines

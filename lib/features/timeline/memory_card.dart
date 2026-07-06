@@ -15,6 +15,7 @@ import '../../utils/memory_image_paths.dart';
 import '../../utils/graph_keyword_focus.dart';
 import '../../utils/memory_keyword_ui.dart';
 import '../../utils/memory_place_cache.dart';
+import '../../utils/memory_place_policy.dart';
 import '../../utils/memory_video_paths.dart';
 import '../../widgets/trust_source_badge.dart';
 import '../../utils/ocr_utils.dart';
@@ -407,13 +408,15 @@ class MemoryCard extends ConsumerWidget {
                       ),
                     ),
                   ],
-                  const SizedBox(height: 8),
-                  Text(
-                    placeTitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                  ),
+                  if (!isUnknownPlaceLabel(placeTitle, locale.languageCode)) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      placeTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
+                  ],
                   if (content.isNotEmpty &&
                       !memoryTextsOverlapForDisplay(placeTitle, content) &&
                       content != placeTitle) ...[

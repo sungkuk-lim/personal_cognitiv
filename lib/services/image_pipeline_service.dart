@@ -228,6 +228,8 @@ Future<Memory?> savePhotoMemoryToStore({
       draft,
       localeCode: localeCode,
       capturePlaceLabel: capturePlaceLabel,
+      captureLat: position?.latitude,
+      captureLng: position?.longitude,
     );
   } else {
     if (position != null) {

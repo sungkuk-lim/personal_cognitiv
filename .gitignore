@@ -57,6 +57,11 @@ android/.kotlin/
 # Coverage
 coverage/
 
+# QA / debug artifacts (local only)
+qa_device_artifacts/
+flutter_*.log
+ui_dump.xml
+
 # Firebase local
 .firebase/
 firebase-debug.log

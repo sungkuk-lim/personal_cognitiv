@@ -45,25 +45,6 @@ class AppEnv {
     defaultValue: false,
   );
 
-  /// 음성 입력 STT 1차 — OpenAI 호환 전사 API 키 (Whisper / gpt-4o-transcribe 등).
-  static const String aiOmakaseApiKey = String.fromEnvironment(
-    'AI_OMAKASE_API_KEY',
-    defaultValue: '',
-  );
-
-  /// 전사 엔드포인트 (OpenAI 호환 multipart /audio/transcriptions).
-  static const String aiOmakaseSttUrl = String.fromEnvironment(
-    'AI_OMAKASE_STT_URL',
-    defaultValue: 'https://api.openai.com/v1/audio/transcriptions',
-  );
-
-  static const String aiOmakaseSttModel = String.fromEnvironment(
-    'AI_OMAKASE_STT_MODEL',
-    defaultValue: 'gpt-4o-mini-transcribe',
-  );
-
-  static bool get hasOmakaseStt => aiOmakaseApiKey.isNotEmpty;
-
   static bool get hasRevenueCat =>
       revenueCatAndroidKey.isNotEmpty || revenueCatIosKey.isNotEmpty;
 

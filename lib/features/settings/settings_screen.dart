@@ -20,10 +20,18 @@ import '../../services/memory_pulse_worker.dart';
 import '../../services/graph_cleanup_service.dart';
 import '../../services/location_permission_service.dart';
 import '../../services/local_memory_store.dart';
+import '../../services/account_deletion_service.dart';
+import '../../services/memory_backup_service.dart';
 import '../../services/memory_cloud_sync_service.dart';
+import '../../services/home_widget_service.dart';
+import '../../features/legal/legal_consent_dialog.dart';
+import '../../features/legal/legal_document_screen.dart';
 import '../../features/subscription/paywall_sheet.dart';
+import '../../features/subscription/pro_saas_dashboard.dart';
 import '../../features/trust/trust_dashboard_screen.dart';
 import 'location_permission_tile.dart';
+import 'settings_plan_cards.dart';
+import 'settings_section_header.dart';
 import 'user_guide_pdf_screen.dart';
 
 class SettingsScreen extends ConsumerWidget {
@@ -83,13 +91,17 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(t['settings']!)),
       body: ListView(
         children: [
+          SettingsSectionHeader(
+            title: t['settings_sec_plan']!,
+            subtitle: t['settings_sec_plan_sub']!,
+            icon: Icons.workspace_premium_outlined,
+          ),
           ListTile(
             leading: const Icon(Icons.menu_book_rounded),
             title: Text(t['user_guide_title']!),
             subtitle: Text(t['user_guide_subtitle']!),
-            onTap: () => _showUserGuideOptions(context, t),
+            onTap: () => _showUsageGuide(context, t),
           ),
-          ListTile(leading: const Icon(Icons.help_outline_rounded), title: Text(t['how_to_use']!), onTap: () => _showUsageGuide(context, t)),
           ListTile(
             leading: Icon(
               Icons.workspace_premium_rounded,
@@ -105,12 +117,20 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => showProPaywall(context, ref),
           ),
           ListTile(
-            leading: const Icon(Icons.widgets_outlined),
-            title: Text(t['home_widget']!),
-            subtitle: Text(t['home_widget_hint']!),
-            onTap: () => _showWidgetGuide(context, t),
+            leading: const Icon(Icons.cloud_sync_rounded),
+            title: Text(t['pro_saas_title']!),
+            subtitle: Text(t['pro_saas_subtitle']!),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => const ProSaasDashboardScreen()),
+            ),
           ),
+          const SettingsPlanOverviewCard(),
           const Divider(),
+          SettingsSectionHeader(
+            title: t['settings_sec_memory']!,
+            icon: Icons.collections_outlined,
+          ),
           ListTile(
             leading: const Icon(Icons.collections_outlined),
             title: Text(t['replay_view_mode']!),
@@ -188,7 +208,12 @@ class SettingsScreen extends ConsumerWidget {
                     ],
                   ),
           ),
+          const SizedBox(height: 8),
           const Divider(),
+          SettingsSectionHeader(
+            title: t['settings_sec_notify']!,
+            icon: Icons.notifications_active_outlined,
+          ),
           const LocationPermissionTile(),
           const Divider(),
           SwitchListTile(
@@ -251,6 +276,11 @@ class SettingsScreen extends ConsumerWidget {
             ),
           ),
           const Divider(),
+          SettingsSectionHeader(
+            title: t['settings_sec_graph']!,
+            icon: Icons.hub_outlined,
+          ),
+          const SettingsGraphAiStatusCard(),
           SwitchListTile(
             secondary: const Icon(Icons.hub_outlined),
             title: Text(t['graph_ai']!),
@@ -311,7 +341,29 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text(t['graph_cleanup_hint']!),
             onTap: () => _runGraphCleanup(context, ref, t),
           ),
+          ListTile(
+            leading: const Icon(Icons.save_alt_outlined),
+            title: Text(t['backup_export']!),
+            subtitle: Text(t['backup_export_hint']!),
+            onTap: () => _exportBackup(context, ref, t),
+          ),
+          ListTile(
+            leading: const Icon(Icons.upload_file_outlined),
+            title: Text(t['backup_import']!),
+            subtitle: Text(t['backup_import_hint']!),
+            onTap: () => _importBackup(context, ref, t),
+          ),
+          ListTile(
+            leading: const Icon(Icons.widgets_outlined),
+            title: Text(t['home_widget']!),
+            subtitle: Text(t['home_widget_hint']!),
+            onTap: () => _showWidgetGuide(context, t),
+          ),
           const Divider(),
+          SettingsSectionHeader(
+            title: t['settings_sec_privacy']!,
+            icon: Icons.lock_outline,
+          ),
           SwitchListTile(
             secondary: const Icon(Icons.lock_outline),
             title: Text(t['privacy_local_mode']!),
@@ -324,7 +376,12 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(),
           ListTile(title: Text(t['theme_color']!)),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Wrap(spacing: 12, children: themeColors.map((color) => GestureDetector(onTap: () => ref.read(seedColorProvider.notifier).state = color, child: CircleAvatar(backgroundColor: color, radius: 20, child: currentSeed == color ? const Icon(Icons.check, color: Colors.white) : null))).toList())),
+          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Wrap(spacing: 12, children: themeColors.map((color) => GestureDetector(onTap: () async {
+            ref.read(seedColorProvider.notifier).state = color;
+            final prefs = ref.read(preferencesProvider);
+            await writeSeedColor(prefs, color);
+            await HomeWidgetService.refreshTheme(color, themeMode: ref.read(themeModeProvider));
+          }, child: CircleAvatar(backgroundColor: color, radius: 20, child: currentSeed == color ? const Icon(Icons.check, color: Colors.white) : null))).toList())),
           ListTile(title: Text(t['language']!), trailing: DropdownButton<Locale>(value: ref.watch(languageProvider), onChanged: (l) {
             if (l == null) return;
             ref.read(languageProvider.notifier).state = l;
@@ -343,9 +400,30 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.privacy_tip_outlined),
             title: Text(t['privacy_policy']!),
-            subtitle: Text(t['privacy_policy_open_web']!),
-            onTap: () => _showPrivacyPolicy(context, t),
+            subtitle: Text(t['privacy_policy_open_in_app']!),
+            onTap: () => openLegalDocument(
+              context,
+              title: t['privacy_policy']!,
+              assetPath: LegalDocumentScreen.privacyAsset,
+            ),
           ),
+          ListTile(
+            leading: const Icon(Icons.gavel_outlined),
+            title: Text(t['terms_of_service']!),
+            subtitle: Text(t['terms_open_in_app']!),
+            onTap: () => openLegalDocument(
+              context,
+              title: t['terms_of_service']!,
+              assetPath: LegalDocumentScreen.termsAsset,
+            ),
+          ),
+          if (AppEnv.isConfigured)
+            ListTile(
+              leading: Icon(Icons.delete_forever_outlined, color: Theme.of(context).colorScheme.error),
+              title: Text(t['account_delete_title']!),
+              subtitle: Text(t['account_delete_hint']!),
+              onTap: () => _confirmAccountDeletion(context, ref, t),
+            ),
           if (AppEnv.isConfigured)
             ListTile(
               leading: const Icon(Icons.cloud_upload_outlined),
@@ -403,6 +481,34 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _exportBackup(BuildContext context, WidgetRef ref, Map<String, String> t) async {
+    try {
+      await ref.read(memoryBackupServiceProvider).shareBackup();
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t['backup_export_done']!)));
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t['backup_import_failed']!)));
+    }
+  }
+
+  Future<void> _importBackup(BuildContext context, WidgetRef ref, Map<String, String> t) async {
+    try {
+      final count = await ref.read(memoryBackupServiceProvider).importFromPicker();
+      if (!context.mounted) return;
+      if (count <= 0) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t['backup_import_failed']!)));
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t['backup_import_done']!.replaceAll('{count}', '$count'))),
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t['backup_import_failed']!)));
+    }
+  }
+
   Future<void> _runCloudSync(BuildContext context, WidgetRef ref, Map<String, String> t) async {
     final report = await syncLocalMemoriesToCloud(
       prefs: ref.read(preferencesProvider),
@@ -420,84 +526,57 @@ class SettingsScreen extends ConsumerWidget {
     }
   }
 
-  void _showUserGuideOptions(BuildContext context, Map<String, String> t) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                t['user_guide_title']!,
-                style: Theme.of(ctx).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 16),
-              ListTile(
-                leading: const Icon(Icons.picture_as_pdf_outlined),
-                title: Text(t['user_guide_open_pdf']!),
-                subtitle: Text(t['user_guide_subtitle']!),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => UserGuidePdfScreen(title: t['user_guide_title']!),
-                    ),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.language_outlined),
-                title: Text(t['user_guide_open_web']!),
-                subtitle: Text(AppUrls.userGuide),
-                onTap: () async {
-                  Navigator.pop(ctx);
-                  final uri = Uri.tryParse(AppUrls.userGuide);
-                  if (uri != null && await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showPrivacyPolicy(BuildContext context, Map<String, String> t) async {
-    final uri = Uri.tryParse(AppUrls.privacyPolicy);
+  void _openUrl(BuildContext context, String url) async {
+    final uri = Uri.tryParse(url);
     if (uri != null && await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _confirmAccountDeletion(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, String> t,
+  ) async {
+    final guest = ref.read(guestModeProvider);
+    if (guest) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t['account_delete_guest']!)),
+      );
       return;
     }
-    final text = await rootBundle.loadString('docs/PRIVACY_POLICY.md');
-    if (!context.mounted) return;
-    showModalBottomSheet(
+    final ok = await showDialog<bool>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (ctx) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: 0.85,
-        builder: (_, controller) => Padding(
-          padding: const EdgeInsets.all(20),
-          child: ListView(
-            controller: controller,
-            children: [
-              Text(t['privacy_policy']!, style: Theme.of(ctx).textTheme.titleLarge),
-              const SizedBox(height: 16),
-              Text(text, style: Theme.of(ctx).textTheme.bodyMedium),
-            ],
+      builder: (ctx) => AlertDialog(
+        title: Text(t['account_delete_title']!),
+        content: Text(t['account_delete_confirm']!),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t['cancel']!)),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t['account_delete_action']!),
           ),
-        ),
+        ],
       ),
     );
+    if (ok != true || !context.mounted) return;
+
+    final result = await deleteUserAccountAndData(prefs: ref.read(preferencesProvider));
+    if (!context.mounted) return;
+    if (result.success) {
+      ref.read(guestModeProvider.notifier).state = false;
+      await ref.read(memoryListProvider.notifier).reload();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t['account_delete_done']!)),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t['account_delete_failed']!)),
+      );
+    }
   }
 
   void _showUsageGuide(BuildContext context, Map<String, String> t, {bool scrollToRecall = false}) {
@@ -529,11 +608,60 @@ class SettingsScreen extends ConsumerWidget {
           child: ListView(
             controller: scrollController,
             children: [
-              Text(
-                t['guide_title']!,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      t['guide_title']!,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 16),
+              // PDF 및 웹 가이드 빠른 링크
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => UserGuidePdfScreen(title: t['user_guide_title']!),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 20),
+                      label: Text(t['user_guide_open_pdf'] ?? 'PDF 가이드'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(context);
+                        final uri = Uri.tryParse(AppUrls.userGuide);
+                        if (uri != null && await canLaunchUrl(uri)) {
+                          await launchUrl(uri, mode: LaunchMode.externalApplication);
+                        }
+                      },
+                      icon: const Icon(Icons.language_outlined, size: 20),
+                      label: Text(t['user_guide_open_web'] ?? '웹 안내'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
               Text(
                 t['guide_intro']!,
                 style: TextStyle(fontSize: 14, height: 1.5, color: Theme.of(context).colorScheme.onSurfaceVariant),

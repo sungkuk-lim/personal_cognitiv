@@ -61,6 +61,7 @@ void main() async {
       overrides: [
         preferencesProvider.overrideWithValue(prefs),
         themeModeProvider.overrideWith((ref) => readSavedThemeMode(prefs)),
+        seedColorProvider.overrideWith((ref) => readSeedColor(prefs)),
         graphNodePositionsProvider.overrideWith((ref) => readSavedGraphPositions(prefs)),
         ocrEngineModeProvider.overrideWith((ref) => readOcrEngineMode(prefs)),
         ocrVisionQualityProvider.overrideWith((ref) => readOcrVisionQuality(prefs)),

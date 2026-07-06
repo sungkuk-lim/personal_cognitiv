@@ -55,7 +55,8 @@ Console: https://console.firebase.google.com/project/memoryos-personal-cognitiv/
 
 ## Play Store 준비
 
-[docs/STORE_READINESS.md](docs/STORE_READINESS.md) · [GitHub Pages 배포](docs/GITHUB_PAGES.md)
+**[docs/TOTAL.md](docs/TOTAL.md)** — SaaS·요금·Play·무료/Pro·관계망 AI **종합 가이드**  
+[docs/MODAMNET_INDEX.md](docs/MODAMNET_INDEX.md) · [docs/STORE_READINESS.md](docs/STORE_READINESS.md) · [GitHub Pages 배포](docs/GITHUB_PAGES.md)
 
 개인정보 처리방침: `docs/privacy.html` → Pages URL 예: `https://YOUR_USER.github.io/personal_cognitiv/privacy.html`
 

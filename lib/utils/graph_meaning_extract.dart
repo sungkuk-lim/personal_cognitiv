@@ -109,9 +109,10 @@ String _polishLine(String text, String localeCode) {
 }
 
 bool isMeaningfulGraphSummary(String summary) {
-  if (summary.isEmpty || isGraphJunkTitle(summary) || isPhotoStyleSummary(summary)) {
+  if (summary.isEmpty || isGraphMetaContent(summary) || isPhotoStyleSummary(summary)) {
     return false;
   }
+  if (summary.startsWith('기억에 남는')) return false;
 
   final commaParts = summary.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
   if (commaParts.length >= 3 && !summary.contains('.')) return false;

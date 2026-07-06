@@ -1,7 +1,10 @@
 import '../models/graph_ai_snapshot.dart';
 import '../models/memory.dart';
 import 'entity_canonical.dart';
+import 'korean_person_names.dart';
 import 'memory_entity_extract.dart';
+import 'memory_participation_extract.dart';
+import 'memory_entity_edit.dart';
 import 'memory_theme_tags.dart';
 
 /// 관계: rel:{predicate}:{object} 또는 rel:{subject}:{predicate}:{object}
@@ -21,6 +24,8 @@ const kRelationPredicates = {
   '도움': ['도움', '도와', '부탁'],
   '공부': ['공부', '학습', '수업'],
   '운동': ['운동', '달리', '헬스', '수영'],
+  '응시': ['시험', '응시', '친대', '봤'],
+  '응원': ['응원', '좋겠', '바라', '힘내', '잘 쳤'],
 };
 
 const kLifeEventKeywords = {
@@ -95,6 +100,14 @@ List<MemoryRelation> relationsForMemory(Memory memory) {
       .toList();
 }
 
+/// 저장된 rel: 태그 + 본문 추출 관계를 합칩니다 (관계망·AI 훅용).
+List<MemoryRelation> effectiveRelationsForMemory(Memory memory, {String localeCode = 'ko'}) {
+  return _dedupeRelations([
+    ...relationsForMemory(memory),
+    ...extractRelationsFromMemory(memory, localeCode: localeCode),
+  ]);
+}
+
 MemoryEventHub? eventHubForMemory(Memory memory) {
   for (final e in memory.entities) {
     final hub = MemoryEventHub.fromEntityTag(e);
@@ -164,9 +177,11 @@ List<MemoryRelation> extractRelationsFromMemory(Memory memory, {String localeCod
   for (final person in bundle.people) {
     final p = canonicalEntityLabel(person);
     if (p.isEmpty || p == '나') continue;
-    if (text.contains('함께') || text.contains('같이') || RegExp('(?:와|과)\\s*$p').hasMatch(text)) {
-      relations.add(MemoryRelation(predicate: '동행', object: p));
-    } else if (text.contains(p)) {
+    final escaped = RegExp.escape(p);
+    if (text.contains('함께') ||
+        text.contains('같이') ||
+        RegExp('(?:와|과|랑|이랑)\\s*$escaped').hasMatch(text) ||
+        RegExp('$escaped(?:와|과|랑|이랑)').hasMatch(text)) {
       relations.add(MemoryRelation(predicate: '동행', object: p));
     }
   }
@@ -193,14 +208,57 @@ List<MemoryRelation> extractRelationsFromMemory(Memory memory, {String localeCod
 
   for (final activity in bundle.activities) {
     for (final entry in kRelationPredicates.entries) {
-      if (entry.key == '동행' || entry.key == '방문' || entry.key == '식사') continue;
+      if (entry.key == '동행' ||
+          entry.key == '방문' ||
+          entry.key == '식사' ||
+          entry.key == '응시' ||
+          entry.key == '응원') {
+        continue;
+      }
       if (entry.value.any((w) => activity.contains(w) || text.contains(w))) {
         relations.add(MemoryRelation(predicate: entry.key, object: activity));
       }
     }
   }
 
+  _appendFamilyExamRelations(relations, memory, bundle, text, localeCode);
+
   return _dedupeRelations(relations);
+}
+
+void _appendFamilyExamRelations(
+  List<MemoryRelation> relations,
+  Memory memory,
+  MemoryEntityBundle bundle,
+  String text,
+  String localeCode,
+) {
+  if (!text.contains('시험')) return;
+
+  final examLabel = bundle.events.isNotEmpty
+      ? bundle.events.first
+      : (bundle.eventTitle.isNotEmpty ? bundle.eventTitle : '시험');
+
+  for (final person in bundle.people) {
+    if (person == selfPersonGraphLabel(localeCode)) continue;
+    final escaped = RegExp.escape(person);
+    if (!RegExp('$escaped(?:이|가|은|는|과|와|랑|이랑|을|를|의|님|씨|도|만|하고)?(?=[\\s,.]|\$)')
+        .hasMatch(text)) {
+      continue;
+    }
+    relations.add(MemoryRelation(subject: person, predicate: '응시', object: examLabel));
+  }
+
+  final self = selfPersonGraphLabel(localeCode);
+  final wishesWell = RegExp(r'잘\s*쳤|좋겠|바라|응원|힘내|기도').hasMatch(text);
+  if (!wishesWell) return;
+
+  for (final person in bundle.people) {
+    if (person == self) continue;
+    if (isFamilyRelationTerm(person) || isLikelyKoreanPersonName(person)) {
+      relations.add(MemoryRelation(subject: self, predicate: '응원', object: person));
+    }
+  }
 }
 
 List<MemoryRelation> _dedupeRelations(List<MemoryRelation> items) {
@@ -254,7 +312,13 @@ List<String> rebuildUserVisibleEntitiesFromContent(
     ...bundle.people.map((p) => canonicalEntityLabel(p, localeCode: localeCode)),
     ...bundle.places,
     ...bundle.organizations,
+    ...bundle.events,
     ...bundle.activities,
+    ...bundle.interests,
+    ...bundle.contents,
+    ...bundle.food,
+    ...bundle.hobbies,
+    ...bundle.emotions,
   ];
   final cleaned = labels
       .map((e) => e.trim())
@@ -265,6 +329,9 @@ List<String> rebuildUserVisibleEntitiesFromContent(
 
 /// 저장 직전 — 관계·이벤트·시간·중요도·엔티티 통합 (Phase E).
 Memory enrichMemoryGraphSemantics(Memory memory, {String localeCode = 'ko'}) {
+  final manualVisible = memoryHasManualEntityEdit(memory)
+      ? editableEntityLabelsForMemory(memory)
+      : null;
   final withoutInternal = memory.entities
       .where((e) =>
           !e.startsWith('tag:') &&
@@ -281,7 +348,7 @@ Memory enrichMemoryGraphSemantics(Memory memory, {String localeCode = 'ko'}) {
   final bundle = extractMemoryEntities(enriched, localeCode: localeCode);
   final extras = <String>[];
 
-  final dedupedVisible = rebuildUserVisibleEntitiesFromContent(enriched, localeCode: localeCode);
+  final dedupedVisible = manualVisible ?? rebuildUserVisibleEntitiesFromContent(enriched, localeCode: localeCode);
 
   for (final rel in extractRelationsFromMemory(enriched, localeCode: localeCode)) {
     final tag = rel.toEntityTag();
@@ -306,7 +373,8 @@ Memory enrichMemoryGraphSemantics(Memory memory, {String localeCode = 'ko'}) {
 
   final tags = [
     ...dedupedVisible,
-    ...enriched.entities.where((e) => e.startsWith('tag:')),
+    ...enriched.entities.where((e) => e.startsWith('tag:') && e != kTagEntitiesManual),
+    if (manualVisible != null) kTagEntitiesManual,
     ...extras,
   ];
 
@@ -319,9 +387,9 @@ Memory enrichMemoryGraphSemantics(Memory memory, {String localeCode = 'ko'}) {
   return enriched.copyWith(entities: merged);
 }
 
-bool memoryHasRelation(Memory memory, String predicate, String object, {String? subject}) {
+bool memoryHasRelation(Memory memory, String predicate, String object, {String? subject, String localeCode = 'ko'}) {
   final obj = canonicalEntityLabel(object);
-  for (final rel in relationsForMemory(memory)) {
+  for (final rel in effectiveRelationsForMemory(memory, localeCode: localeCode)) {
     if (rel.predicate != predicate) continue;
     if (canonicalEntityLabel(rel.object) != obj) continue;
     if (subject != null && canonicalEntityLabel(rel.subject) != canonicalEntityLabel(subject)) continue;

@@ -46,6 +46,7 @@ import '../../services/location_permission_service.dart';
 import '../../services/notification_service.dart';
 import '../../utils/memory_video_paths.dart';
 import '../../utils/memory_input_category.dart';
+import '../../utils/memory_place_policy.dart';
 import '../../utils/memory_place_cache.dart';
 import '../../utils/photo_memo_format.dart';
 import '../../utils/photo_memory_format.dart';
@@ -55,6 +56,7 @@ import '../../services/memory_entity_reenrich_service.dart';
 import '../../services/recall_anchor_service.dart';
 import '../../widgets/app_maturity_dialog.dart';
 import '../../widgets/onboarding_sheet.dart';
+import '../../features/legal/legal_consent_dialog.dart';
 import '../../widgets/network_status_banner.dart';
 import '../../features/replay/entity_highlight_viewer.dart';
 import '../../features/story/relationship_story_screen.dart';
@@ -62,7 +64,7 @@ import '../../services/memory_pulse_service.dart';
 import '../../services/memory_pulse_worker.dart';
 import '../../utils/ocr_utils.dart';
 
-Future<Position?> tryGetLocation() => LocationPermissionService.getCurrentPositionIfAllowed();
+Future<Position?> tryGetLocation() => LocationPermissionService.getCurrentPositionForMemoryCapture();
 
 class MainNavigationScreen extends ConsumerStatefulWidget {
   const MainNavigationScreen({super.key});
@@ -136,10 +138,15 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       _setupRecallService();
       _setupSubscription();
       showOnboardingIfNeeded(context, ref);
+      showLegalConsentIfNeeded(context, ref);
       maybeShowAppMaturityDialog(context, ref);
       HomeWidgetService.initialize((uri) {
         ref.read(appLaunchTargetProvider.notifier).state = appLaunchTargetFromUri(uri);
       });
+      HomeWidgetService.refreshTheme(
+        ref.read(seedColorProvider),
+        themeMode: ref.read(themeModeProvider),
+      );
       _handleLaunchTarget(ref.read(appLaunchTargetProvider));
       _wireNotificationTap();
       _maybeDeliverMemoryPulse();
@@ -318,22 +325,13 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   }
 
   Future<bool> _ensureVoiceInputReady() async {
-    _voiceEngine ??= VoiceSttEngineResolver.resolve(_speech);
-    if (AppEnv.hasOmakaseStt) {
-      final mic = await Permission.microphone.request();
-      if (!mic.isGranted) return false;
-    }
-    if (_speechInitialized) return true;
+    final mic = await Permission.microphone.request();
+    if (!mic.isGranted) return false;
 
-    var ready = await _voiceEngine!.initialize(
+    _voiceEngine = VoiceSttEngineResolver.resolve(_speech);
+    final ready = await _voiceEngine!.initialize(
       onAutoRestart: () => _speechDoneHandler?.call(),
     );
-    if (!ready && AppEnv.hasOmakaseStt) {
-      _voiceEngine = DeviceVoiceSttEngine(_speech);
-      ready = await _voiceEngine!.initialize(
-        onAutoRestart: () => _speechDoneHandler?.call(),
-      );
-    }
     _speechInitialized = ready;
     return ready;
   }
@@ -401,6 +399,10 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
               final nextMode = isDark ? ThemeMode.light : ThemeMode.dark;
               ref.read(themeModeProvider.notifier).state = nextMode;
               saveThemeMode(ref.read(preferencesProvider), nextMode);
+              HomeWidgetService.refreshTheme(
+                ref.read(seedColorProvider),
+                themeMode: nextMode,
+              );
             },
           ),
           IconButton(
@@ -532,7 +534,6 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         confirmLabel: confirmLabel,
         cancelLabel: t['cancel']!,
         listeningLabel: t['listening']!,
-        cloudListeningLabel: t['stt_cloud_listening'],
         voiceModeLabel: t['input_mode_voice']!,
         keyboardModeLabel: t['input_mode_keyboard']!,
         maxLines: maxLines,
@@ -578,18 +579,13 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     if (!mounted) return;
 
     final prefs = ref.read(preferencesProvider);
-    final localOnly = isLocalOnlyMode(
+    var localOnly = isLocalOnlyMode(
       prefs,
       privacyMode: ref.read(privacyLocalModeProvider),
       guestMode: ref.read(guestModeProvider),
     );
     if (!localOnly && !AppEnv.isConfigured) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(ref.read(translationsProvider)['save_failed']!)),
-        );
-      }
-      return;
+      localOnly = true;
     }
 
     final locale = ref.read(languageProvider).languageCode;
@@ -903,22 +899,19 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     bool manageProcessingOverlay = true,
     Uint8List? imageBytesForThumbnail,
     MemoryInputCategory? inputCategory,
+    bool forceLocal = false,
   }) async {
     if (!mounted) return;
 
     final prefs = ref.read(preferencesProvider);
-    var useCloud = !isLocalOnlyMode(
-      prefs,
-      privacyMode: ref.read(privacyLocalModeProvider),
-      guestMode: ref.read(guestModeProvider),
-    );
-    if (useCloud && !AppEnv.isConfigured) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(ref.read(translationsProvider)['save_failed']!)),
+    var useCloud = !forceLocal &&
+        !isLocalOnlyMode(
+          prefs,
+          privacyMode: ref.read(privacyLocalModeProvider),
+          guestMode: ref.read(guestModeProvider),
         );
-      }
-      return;
+    if (useCloud && !AppEnv.isConfigured) {
+      useCloud = false;
     }
     if (!mounted) return;
     if (useCloud) {
@@ -942,12 +935,13 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
             )
           : null;
       final gpsPlace = _gpsPlaceOrCoords(position, gpsPlaceResolved);
+      final persistGps = shouldPersistCaptureGpsOnSave(type: type, content: text, localeCode: locale);
       final capturedAt = DateTime.now();
       final voiceFields = buildVoiceMemoryFields(
         speechText: text,
         capturedAt: capturedAt,
         localeCode: locale,
-        gpsPlace: gpsPlace,
+        gpsPlace: persistGps ? gpsPlace : null,
       );
 
       if (!useCloud) {
@@ -966,14 +960,16 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
           category: applied.category,
           subCategory: applied.subCategory,
           type: type,
-          lat: position?.latitude,
-          lng: position?.longitude,
+          lat: persistGps ? position?.latitude : null,
+          lng: persistGps ? position?.longitude : null,
         );
         draft = await resolveRecallAnchorForMemory(
           context,
           draft,
           localeCode: locale,
           capturePlaceLabel: gpsPlace,
+          captureLat: position?.latitude,
+          captureLng: position?.longitude,
         );
         if (!mounted) return;
         final saved = await ref.read(memoryListProvider.notifier).addMemory(draft);
@@ -1020,14 +1016,16 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         subCategory: applied.subCategory,
         embedding: embedding,
         type: type,
-        lat: position?.latitude,
-        lng: position?.longitude,
+        lat: persistGps ? position?.latitude : null,
+        lng: persistGps ? position?.longitude : null,
       );
       draft = await resolveRecallAnchorForMemory(
         context,
         draft,
         localeCode: locale,
         capturePlaceLabel: gpsPlace,
+        captureLat: position?.latitude,
+        captureLng: position?.longitude,
       );
       if (!mounted) return;
       final saved = await ref.read(memoryListProvider.notifier).addMemory(draft);
@@ -1043,8 +1041,19 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ref.read(translationsProvider)['save_failed']!)));
       }
-    } catch (e) {
-      debugPrint("AI/Save Error: $e");
+    } catch (e, stack) {
+      debugPrint("AI/Save Error: $e\n$stack");
+      if (useCloud && !forceLocal && mounted) {
+        await _processAndSaveMemory(
+          text,
+          ref,
+          type: type,
+          manageProcessingOverlay: false,
+          inputCategory: inputCategory,
+          forceLocal: true,
+        );
+        return;
+      }
       if (mounted) {
         final t = ref.read(translationsProvider);
         final msg = e is SubscriptionRequiredException

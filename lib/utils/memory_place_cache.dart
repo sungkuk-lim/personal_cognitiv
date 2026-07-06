@@ -7,6 +7,7 @@ import '../models/memory.dart';
 import '../services/place_lookup_service.dart';
 import 'korean_person_names.dart';
 import 'memory_grouping.dart';
+import 'memory_place_policy.dart';
 import 'ocr_utils.dart';
 
 const String prefMemoryPlaceNames = 'memory_place_names';
@@ -45,14 +46,65 @@ Future<void> saveMemoryPlaceFullAddresses(SharedPreferences prefs, Map<String, S
   await prefs.setString(prefMemoryPlaceFullAddresses, jsonEncode(addresses));
 }
 
-String? placeNameFromCache(Memory memory, Map<String, String> cache) {
-  if (memory.lat == null || memory.lng == null) return null;
-  return cache[latLngCacheKey(memory.lat!, memory.lng!)];
+String? _placeNameFromCoords(({double lat, double lng}) coords, Map<String, String> cache) {
+  return cache[latLngCacheKey(coords.lat, coords.lng)];
 }
 
-String? fullAddressFromCache(Memory memory, Map<String, String> cache) {
+String? _fullAddressFromCoords(({double lat, double lng}) coords, Map<String, String> cache) {
+  return cache[latLngCacheKey(coords.lat, coords.lng)];
+}
+
+/// 표시 정책과 무관하게 캐시에 좌표가 있으면 주소 조회에 사용합니다.
+({double lat, double lng})? _coordsForAddressLookup(
+  Memory memory,
+  Map<String, String> placeCache,
+  Map<String, String> fullAddressCache, {
+  String localeCode = 'ko',
+}) {
+  final coords = displayCoordinatesForMemory(memory, localeCode: localeCode);
+  if (coords != null) return coords;
   if (memory.lat == null || memory.lng == null) return null;
-  return cache[latLngCacheKey(memory.lat!, memory.lng!)];
+  final key = latLngCacheKey(memory.lat!, memory.lng!);
+  if (fullAddressCache.containsKey(key) || placeCache.containsKey(key)) {
+    return (lat: memory.lat!, lng: memory.lng!);
+  }
+  return null;
+}
+
+String? placeNameFromCache(Memory memory, Map<String, String> cache, {String localeCode = 'ko'}) {
+  final coords = displayCoordinatesForMemory(memory, localeCode: localeCode);
+  if (coords == null) return null;
+  return _placeNameFromCoords(coords, cache);
+}
+
+String? fullAddressFromCache(Memory memory, Map<String, String> cache, {String localeCode = 'ko'}) {
+  final coords = displayCoordinatesForMemory(memory, localeCode: localeCode);
+  if (coords == null) return null;
+  return _fullAddressFromCoords(coords, cache);
+}
+
+String? _addressFromDisplayCoords(
+  Memory memory,
+  Map<String, String> placeCache,
+  Map<String, String> fullAddressCache, {
+  String localeCode = 'ko',
+}) {
+  final coords = _coordsForAddressLookup(
+    memory,
+    placeCache,
+    fullAddressCache,
+    localeCode: localeCode,
+  );
+  if (coords == null) return null;
+
+  final full = _fullAddressFromCoords(coords, fullAddressCache);
+  if (full != null && full.isNotEmpty) return full;
+
+  final short = _placeNameFromCoords(coords, placeCache);
+  if (short != null && short.isNotEmpty && !isLikelyLotNumber(short) && !isLatLngLabel(short)) {
+    return short;
+  }
+  return null;
 }
 
 /// 역지오코딩 결과를 캐시에 저장합니다. (표시용, 비용 없음)
@@ -66,14 +118,15 @@ Future<Map<String, String>> warmPlaceNamesForMemories(
 
   final seen = <String>{};
   for (final memory in memories) {
-    if (memory.lat == null || memory.lng == null) continue;
-    final key = latLngCacheKey(memory.lat!, memory.lng!);
+    final coords = displayCoordinatesForMemory(memory, localeCode: localeCode);
+    if (coords == null) continue;
+    final key = latLngCacheKey(coords.lat, coords.lng);
     if (!seen.add(key)) continue;
     if (cache.containsKey(key) && cache[key]!.trim().isNotEmpty) continue;
 
     final name = await PlaceLookupService.resolvePlaceName(
-      memory.lat!,
-      memory.lng!,
+      coords.lat,
+      coords.lng,
       localeCode: localeCode,
     );
     if (name != null && name.trim().isNotEmpty) {
@@ -96,14 +149,15 @@ Future<Map<String, String>> warmPlaceFullAddressesForMemories(
 
   final seen = <String>{};
   for (final memory in memories) {
-    if (memory.lat == null || memory.lng == null) continue;
-    final key = latLngCacheKey(memory.lat!, memory.lng!);
+    final coords = displayCoordinatesForMemory(memory, localeCode: localeCode);
+    if (coords == null) continue;
+    final key = latLngCacheKey(coords.lat, coords.lng);
     if (!seen.add(key)) continue;
     if (cache.containsKey(key) && cache[key]!.trim().isNotEmpty) continue;
 
     final address = await PlaceLookupService.resolveFullAddress(
-      memory.lat!,
-      memory.lng!,
+      coords.lat,
+      coords.lng,
       localeCode: localeCode,
     );
     if (address != null && address.trim().isNotEmpty) {
@@ -116,31 +170,18 @@ Future<Map<String, String>> warmPlaceFullAddressesForMemories(
   return cache;
 }
 
-String? placeLabelFromEntities(Memory memory) {
-  for (final entity in sanitizeEntities(memory.entities)) {
-    if (isLatLngLabel(entity) || isLikelyLotNumber(entity)) continue;
-    if (entity.length < 2 || entity.length > 24) continue;
-    if (isLikelyKoreanPersonName(entity)) continue;
-    if (looksLikeKoreanPlaceName(entity) || entity.contains(' ') || entity.contains('해수욕장')) {
-      return entity;
-    }
-  }
-  return null;
-}
-
 String? _addressFromMemoryCoords(
   Memory memory,
   Map<String, String> placeCache,
-  Map<String, String> fullAddressCache,
-) {
-  final full = fullAddressFromCache(memory, fullAddressCache);
-  if (full != null && full.isNotEmpty) return full;
-
-  final short = placeNameFromCache(memory, placeCache);
-  if (short != null && short.isNotEmpty && !isLikelyLotNumber(short) && !isLatLngLabel(short)) {
-    return short;
-  }
-  return null;
+  Map<String, String> fullAddressCache, {
+  String localeCode = 'ko',
+}) {
+  return _addressFromDisplayCoords(
+    memory,
+    placeCache,
+    fullAddressCache,
+    localeCode: localeCode,
+  );
 }
 
 /// 카드·상세용 상세 주소 — GPS 역지오코딩 우선, 없으면 장소 엔티티·짧은 장소명.
@@ -161,7 +202,15 @@ String displayPlaceAddress(
     );
   }
 
-  final fromCoords = _addressFromMemoryCoords(memory, placeCache, fullAddressCache);
+  final pinned = pinnedPlaceLabelForMemory(memory, localeCode: localeCode);
+  if (pinned != null && pinned.isNotEmpty) return pinned;
+
+  final fromCoords = _addressFromMemoryCoords(
+    memory,
+    placeCache,
+    fullAddressCache,
+    localeCode: localeCode,
+  );
   if (fromCoords != null) return fromCoords;
 
   final fromEntity = placeLabelFromEntities(memory);
@@ -185,8 +234,16 @@ String _displayPlaceAddressForGraphNote(
   required String localeCode,
   List<Memory>? allMemories,
 }) {
-  final fromCoords = _addressFromMemoryCoords(memory, placeCache, fullAddressCache);
+  final fromCoords = _addressFromMemoryCoords(
+    memory,
+    placeCache,
+    fullAddressCache,
+    localeCode: localeCode,
+  );
   if (fromCoords != null) return fromCoords;
+
+  final pinned = pinnedPlaceLabelForMemory(memory, localeCode: localeCode);
+  if (pinned != null && pinned.isNotEmpty) return pinned;
 
   final fromEntity = placeLabelFromEntities(memory);
   if (fromEntity != null) return fromEntity;
@@ -251,8 +308,14 @@ String displayPlaceTitle(
     );
   }
 
-  final cached = placeNameFromCache(memory, placeCache);
-  if (cached != null && cached.isNotEmpty) return cached;
+  final pinned = pinnedPlaceLabelForMemory(memory, localeCode: localeCode);
+  if (pinned != null && pinned.isNotEmpty) return pinned;
+
+  final coords = displayCoordinatesForMemory(memory, localeCode: localeCode);
+  if (coords != null) {
+    final cached = _placeNameFromCoords(coords, placeCache);
+    if (cached != null && cached.isNotEmpty) return cached;
+  }
 
   final fromEntity = placeLabelFromEntities(memory);
   if (fromEntity != null) return fromEntity;
@@ -278,8 +341,14 @@ String _displayPlaceTitleForGraphNote(
   required String localeCode,
   List<Memory>? allMemories,
 }) {
-  final cached = placeNameFromCache(memory, placeCache);
-  if (cached != null && cached.isNotEmpty) return cached;
+  final pinned = pinnedPlaceLabelForMemory(memory, localeCode: localeCode);
+  if (pinned != null && pinned.isNotEmpty) return pinned;
+
+  final coords = displayCoordinatesForMemory(memory, localeCode: localeCode);
+  if (coords != null) {
+    final cached = _placeNameFromCoords(coords, placeCache);
+    if (cached != null && cached.isNotEmpty) return cached;
+  }
 
   final fromEntity = placeLabelFromEntities(memory);
   if (fromEntity != null) return fromEntity;

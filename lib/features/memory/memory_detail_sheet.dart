@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../features/memory/memory_entity_editor_sheet.dart';
 import '../../features/memory/local_video_player.dart';
 import '../../features/memory/media_delete_button.dart';
 import '../../features/memory/memory_detail_options.dart';
@@ -20,6 +21,7 @@ import '../../utils/memory_image_paths.dart';
 import '../../utils/memory_content_edit.dart';
 import '../../utils/memory_detail_text.dart';
 import '../../utils/memory_place_cache.dart';
+import '../../utils/memory_place_policy.dart';
 import '../../utils/memory_video_paths.dart';
 import '../../widgets/trust_source_badge.dart';
 import '../../utils/memory_theme_tags.dart';
@@ -771,12 +773,38 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
                   ),
                 ],
               ),
-            if (!opts.isLight && displayEntitiesForMemory(memory).isNotEmpty) ...[
+            if (!opts.isLight) ...[
               const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                children: displayEntitiesForMemory(memory).map((e) => Chip(label: Text(e))).toList(),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      ref.watch(translationsProvider)['entity_edit_section'] ?? '관계 태그',
+                      style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => showMemoryEntityEditor(context, ref, memory: memory),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: Text(ref.watch(translationsProvider)['edit'] ?? '수정'),
+                  ),
+                ],
               ),
+              if (displayEntitiesForMemory(memory).isNotEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: displayEntitiesForMemory(memory).map((e) => Chip(label: Text(e))).toList(),
+                )
+              else
+                Text(
+                  ref.watch(translationsProvider)['entity_edit_empty']!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              const SizedBox(height: 8),
             ],
             if (!opts.isLight) MemoryRelatedSection(memory: memory),
                 ],

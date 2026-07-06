@@ -22,6 +22,7 @@ import '../../providers/subscription_providers.dart';
 import '../../utils/memory_image_paths.dart';
 import '../../utils/memory_video_paths.dart';
 import '../../utils/semantic_search.dart';
+import '../../utils/graph_keyword_focus.dart';
 import '../../utils/graph_time_filter.dart';
 import '../../utils/memory_content_edit.dart';
 import '../../widgets/person_node_avatar.dart';
@@ -62,8 +63,9 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
   Size? _cachedCanvasSize;
   Map<String, Offset>? _cachedDefaults;
   KeywordFocusGraphResult? _cachedFocusResult;
+  MemoryFocusGraphResult? _cachedMemoryFocusResult;
   Map<String, Offset> _focusDragPositions = {};
-  String? _focusDragKeyword;
+  String? _focusDragScope;
 
   @override
   void initState() {
@@ -95,6 +97,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
         _cachedCanvasSize = null;
         _cachedDefaults = null;
         _cachedFocusResult = null;
+        _cachedMemoryFocusResult = null;
       });
     });
     ref.listenManual<bool>(contactPersonAvatarsEnabledProvider, (prev, next) {
@@ -281,8 +284,10 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
   void _finishDrag(WidgetRef ref) {
     final live = _livePositions;
     if (live != null && _moved) {
+      final focusMemoryId = ref.read(graphFocusMemoryIdProvider)?.trim();
       final focusKeyword = ref.read(graphFocusKeywordProvider)?.trim();
-      if (focusKeyword != null && focusKeyword.isNotEmpty) {
+      if ((focusMemoryId != null && focusMemoryId.isNotEmpty) ||
+          (focusKeyword != null && focusKeyword.isNotEmpty)) {
         setState(() {
           _focusDragPositions = {..._focusDragPositions, ...live};
         });
@@ -469,10 +474,17 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       return Center(child: Text(t['no_graph']!));
     }
 
+    final focusMemoryId = ref.watch(graphFocusMemoryIdProvider);
     final focusKeyword = ref.watch(graphFocusKeywordProvider);
-    final isFocusMode = focusKeyword != null && focusKeyword.trim().isNotEmpty;
-    if (_focusDragKeyword != focusKeyword) {
-      _focusDragKeyword = focusKeyword;
+    final isMemoryFocusMode = focusMemoryId != null && focusMemoryId.trim().isNotEmpty;
+    final isKeywordFocusMode =
+        !isMemoryFocusMode && focusKeyword != null && focusKeyword.trim().isNotEmpty;
+    final isFocusMode = isMemoryFocusMode || isKeywordFocusMode;
+    final focusScope = isMemoryFocusMode
+        ? 'mem:${focusMemoryId!.trim()}'
+        : (isKeywordFocusMode ? 'kw:${focusKeyword!.trim()}' : null);
+    if (_focusDragScope != focusScope) {
+      _focusDragScope = focusScope;
       _focusDragPositions = {};
     }
     final graphTabActive = ref.watch(mainNavigationTabProvider) == 2;
@@ -546,7 +558,8 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     late final Size canvasSize;
     late final Map<String, Offset> defaults;
     KeywordFocusGraphResult? focusResult;
-    final keyword = focusKeyword ?? '';
+    MemoryFocusGraphResult? memoryFocusResult;
+    final keyword = focusKeyword?.trim() ?? '';
     final mergedExpansions = isFocusMode
         ? const <String, GraphSatelliteExpandMode>{}
         : mergeDefaultSatelliteExpansions(
@@ -560,9 +573,11 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     final expansionKey = mergedExpansions.entries.map((e) => '${e.key}:${e.value.name}').join('|');
     final collapseKey = _collapsedSatelliteMemoryIds.join(',');
     final fragmentKey = fragments.entries.map((e) => '${e.key}:${e.value.meaningTitle}').join('|');
-    final fingerprint = isFocusMode
-        ? 'focus:$keyword:$memoryKey:$localeCode'
-        : 'full:$memoryKey:$expansionKey:$collapseKey:$localeCode:$graphAiOn:${hubViewMode.name}:$fragmentKey';
+    final fingerprint = isMemoryFocusMode
+        ? 'memfocus:${focusMemoryId!.trim()}:$memoryKey:$localeCode:$fragmentKey'
+        : isKeywordFocusMode
+            ? 'focus:$keyword:$memoryKey:$localeCode'
+            : 'full:$memoryKey:$expansionKey:$collapseKey:$localeCode:$graphAiOn:${hubViewMode.name}:$fragmentKey';
 
     if (_layoutFingerprint == fingerprint &&
         _cachedLayout != null &&
@@ -572,7 +587,52 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       canvasSize = _cachedCanvasSize!;
       defaults = _cachedDefaults!;
       focusResult = _cachedFocusResult;
-    } else if (isFocusMode) {
+      memoryFocusResult = _cachedMemoryFocusResult;
+    } else if (isMemoryFocusMode) {
+      Memory? focusMemory;
+      for (final m in memories) {
+        if (m.id == focusMemoryId!.trim()) {
+          focusMemory = m;
+          break;
+        }
+      }
+      if (focusMemory == null) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(t['graph_memory_focus_missing']!, textAlign: TextAlign.center),
+                const SizedBox(height: 16),
+                FilledButton.tonal(
+                  onPressed: () => clearGraphFocus(ref),
+                  child: Text(t['graph_focus_show_all']!),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+      memoryFocusResult = buildMemoryFocusGraphLayout(
+        focusMemory,
+        placeCache: placeCache,
+        fullAddressCache: fullAddressCache,
+        graphFragments: fragments,
+        localeCode: localeCode,
+        photoCountFor: (id) => imageCountForMemoryId(id, imagePaths),
+        hasVideoFor: (id) => memoryHasVideo(id, videoPaths),
+      );
+      layout = memoryFocusResult.layout;
+      canvasSize = memoryFocusCanvasSize(layout.nodes.length);
+      defaults = initialGraphPositions(layout.nodes, layout.edges, canvasSize);
+      _layoutFingerprint = fingerprint;
+      _cachedLayout = layout;
+      _cachedCanvasSize = canvasSize;
+      _cachedDefaults = defaults;
+      _cachedFocusResult = null;
+      _cachedMemoryFocusResult = memoryFocusResult;
+    } else if (isKeywordFocusMode) {
       focusResult = buildKeywordFocusGraphLayout(
         keyword,
         visibleMemories,
@@ -589,6 +649,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       _cachedCanvasSize = canvasSize;
       _cachedDefaults = defaults;
       _cachedFocusResult = focusResult;
+      _cachedMemoryFocusResult = null;
     } else if (hubViewMode == GraphHubViewMode.eventHub) {
       layout = buildEventGraphLayout(
         layoutMemories,
@@ -605,6 +666,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       _cachedCanvasSize = canvasSize;
       _cachedDefaults = defaults;
       _cachedFocusResult = null;
+      _cachedMemoryFocusResult = null;
     } else {
       layout = buildMemoryGraphLayout(
         layoutMemories,
@@ -628,7 +690,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       _cachedFocusResult = null;
     }
 
-    if (isFocusMode && focusResult!.totalCount == 0) {
+    if (isKeywordFocusMode && focusResult!.totalCount == 0) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
@@ -638,7 +700,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
               Text(t['graph_focus_empty']!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
               FilledButton.tonal(
-                onPressed: () => ref.read(graphFocusKeywordProvider.notifier).state = null,
+                onPressed: () => clearGraphFocus(ref),
                 child: Text(t['graph_focus_show_all']!),
               ),
             ],
@@ -715,7 +777,9 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
                         ? memoryById[node.id.replaceFirst('memory_', '')]
                         : null;
                     final isHighlighted = isFocusMode
-                        ? node.id.startsWith('focus_hub_') || node.isMemory
+                        ? (isMemoryFocusMode ||
+                            node.id.startsWith('focus_hub_') ||
+                            node.isMemory)
                         : node.isMemory
                             ? linkedMemory != null && memoryMatchesAnyEntity(linkedMemory, highlightedEntities)
                             : highlightedEntities.contains(entityName) || highlightedEntities.contains(node.title);
@@ -811,13 +875,6 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
               _collapseAllSatellites(visibleMemories);
             },
           ),
-        if (!landscapeImmersive && !isFocusMode)
-          _GraphEntitySearchBar(
-            hint: t['graph_entity_search_hint']!,
-            query: ref.watch(graphEntitySearchProvider),
-            onChanged: (v) => ref.read(graphEntitySearchProvider.notifier).state = v,
-            onClear: () => ref.read(graphEntitySearchProvider.notifier).state = '',
-          ),
         if (!landscapeImmersive && !isFocusMode && showScaleBanner)
           _GraphScaleHintBanner(
             total: totalMemoryCount,
@@ -841,7 +898,39 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
               _collapseAllSatellites(visibleMemories);
             },
           ),
-        if (!landscapeImmersive && isFocusMode && focusResult != null)
+        if (!landscapeImmersive && isMemoryFocusMode && memoryFocusResult != null)
+          Material(
+            color: theme.colorScheme.surfaceContainerHighest,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 4, 4),
+              child: Row(
+                children: [
+                  Icon(Icons.memory_rounded, size: 16, color: theme.colorScheme.primary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      t['graph_memory_focus_banner']!
+                          .replaceAll('{title}', memoryFocusResult.title),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => clearGraphFocus(ref),
+                    child: Text(t['graph_focus_show_all']!),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (!landscapeImmersive && isKeywordFocusMode && focusResult != null)
           Material(
             color: theme.colorScheme.surfaceContainerHighest,
             child: Padding(
@@ -875,7 +964,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
                       minimumSize: Size.zero,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     ),
-                    onPressed: () => ref.read(graphFocusKeywordProvider.notifier).state = null,
+                    onPressed: () => clearGraphFocus(ref),
                     child: Text(t['graph_focus_show_all']!),
                   ),
                 ],
@@ -885,7 +974,19 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
         Expanded(
           child: landscapeImmersive
               ? SafeArea(top: false, bottom: false, child: graphCanvas)
-              : graphCanvas,
+              : Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    graphCanvas,
+                    if (!isFocusMode)
+                      _GraphDraggableSearchFab(
+                        hint: t['graph_entity_search_hint']!,
+                        query: ref.watch(graphEntitySearchProvider),
+                        onChanged: (v) => ref.read(graphEntitySearchProvider.notifier).state = v,
+                        onClear: () => ref.read(graphEntitySearchProvider.notifier).state = '',
+                      ),
+                  ],
+                ),
         ),
       ],
     );
@@ -933,8 +1034,8 @@ class _GraphSatelliteChip extends StatelessWidget {
   }
 }
 
-class _GraphEntitySearchBar extends StatelessWidget {
-  const _GraphEntitySearchBar({
+class _GraphDraggableSearchFab extends StatefulWidget {
+  const _GraphDraggableSearchFab({
     required this.hint,
     required this.query,
     required this.onChanged,
@@ -947,26 +1048,123 @@ class _GraphEntitySearchBar extends StatelessWidget {
   final VoidCallback onClear;
 
   @override
+  State<_GraphDraggableSearchFab> createState() => _GraphDraggableSearchFabState();
+}
+
+class _GraphDraggableSearchFabState extends State<_GraphDraggableSearchFab> {
+  bool _expanded = false;
+  Offset _fabOffset = const Offset(12, 12);
+  final _focusNode = FocusNode();
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.query);
+  }
+
+  @override
+  void didUpdateWidget(covariant _GraphDraggableSearchFab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.query != _controller.text) {
+      _controller.text = widget.query;
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _toggleExpanded() {
+    setState(() {
+      _expanded = !_expanded;
+      if (_expanded) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _focusNode.requestFocus());
+      } else {
+        _focusNode.unfocus();
+        widget.onClear();
+        _controller.clear();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Theme.of(context).colorScheme.surface,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-        child: TextField(
-          onChanged: onChanged,
-          decoration: InputDecoration(
-            hintText: hint,
-            prefixIcon: const Icon(Icons.search_rounded, size: 20),
-            suffixIcon: query.isEmpty
-                ? null
-                : IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 18),
-                    onPressed: onClear,
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const fabSize = 48.0;
+        final maxX = (constraints.maxWidth - fabSize - 8).clamp(8.0, double.infinity);
+        final maxY = (constraints.maxHeight - fabSize - 8).clamp(8.0, double.infinity);
+        final dx = _fabOffset.dx.clamp(8.0, maxX);
+        final dy = _fabOffset.dy.clamp(8.0, maxY);
+
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (_expanded)
+              Positioned(
+                left: 12,
+                right: fabSize + 24,
+                top: dy,
+                child: Material(
+                  elevation: 6,
+                  shadowColor: Colors.black26,
+                  borderRadius: BorderRadius.circular(14),
+                  color: colorScheme.surfaceContainerHighest,
+                  child: TextField(
+                    controller: _controller,
+                    focusNode: _focusNode,
+                    onChanged: widget.onChanged,
+                    decoration: InputDecoration(
+                      hintText: widget.hint,
+                      prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                      suffixIcon: widget.query.isEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                              onPressed: _toggleExpanded,
+                            )
+                          : IconButton(
+                              icon: const Icon(Icons.close_rounded, size: 18),
+                              onPressed: () {
+                                widget.onClear();
+                                _controller.clear();
+                              },
+                            ),
+                      isDense: true,
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
                   ),
-            isDense: true,
-          ),
-        ),
-      ),
+                ),
+              ),
+            Positioned(
+              left: dx,
+              top: dy,
+              child: GestureDetector(
+                onPanUpdate: (details) {
+                  setState(() {
+                    _fabOffset += details.delta;
+                  });
+                },
+                child: FloatingActionButton.small(
+                  heroTag: 'graph_entity_search_fab',
+                  elevation: _expanded ? 8 : 4,
+                  backgroundColor: _expanded ? colorScheme.primary : colorScheme.surfaceContainerHighest,
+                  foregroundColor: _expanded ? colorScheme.onPrimary : colorScheme.primary,
+                  onPressed: _toggleExpanded,
+                  child: Icon(_expanded ? Icons.close_rounded : Icons.search_rounded),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

@@ -64,7 +64,14 @@ class MemoryNotifier extends StateNotifier<List<Memory>> {
 
   Future<void> _syncHomeWidget() async {
     final locale = _ref.read(languageProvider).languageCode;
-    await HomeWidgetService.syncMemories(state, localeCode: locale);
+    final seedColor = _ref.read(seedColorProvider);
+    final themeMode = _ref.read(themeModeProvider);
+    await HomeWidgetService.syncMemories(
+      state,
+      localeCode: locale,
+      seedColor: seedColor,
+      themeMode: themeMode,
+    );
     await _syncBackgroundNotifications();
   }
 

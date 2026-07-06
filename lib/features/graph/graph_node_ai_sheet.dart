@@ -25,6 +25,8 @@ import '../../utils/memory_video_paths.dart';
 import 'graph_chat_save.dart';
 import 'graph_layout.dart';
 import 'graph_node_context.dart';
+import 'graph_node_insight.dart';
+import 'graph_node_insight_panel.dart';
 import 'graph_node_local_insights.dart';
 
 class _AiChatLine {
@@ -395,6 +397,12 @@ class _GraphNodeAiSheetState extends ConsumerState<_GraphNodeAiSheet> with Singl
         GraphNodeKind.group => Icons.hub_rounded,
         GraphNodeKind.eventHub => Icons.event_rounded,
         GraphNodeKind.activity => Icons.directions_walk_rounded,
+        GraphNodeKind.event => Icons.event_note_rounded,
+        GraphNodeKind.content => Icons.movie_outlined,
+        GraphNodeKind.interest => Icons.lightbulb_outline_rounded,
+        GraphNodeKind.food => Icons.restaurant_rounded,
+        GraphNodeKind.hobby => Icons.sports_esports_outlined,
+        GraphNodeKind.organization => Icons.business_rounded,
         GraphNodeKind.goal => Icons.flag_rounded,
         GraphNodeKind.emotion => Icons.favorite_rounded,
       };
@@ -483,31 +491,33 @@ class _GraphNodeAiSheetState extends ConsumerState<_GraphNodeAiSheet> with Singl
                         ),
                       ),
                     if (memories.isNotEmpty)
-                      SizedBox(
-                        height: 76,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-                          itemCount: memories.length.clamp(0, 8),
-                          separatorBuilder: (_, __) => const SizedBox(width: 10),
-                          itemBuilder: (_, i) {
-                            final memory = memories[i];
-                            final thumb = primaryImagePathForMemory(memory, widget.imagePaths);
-                            return _MemoryChip(
-                              memory: memory,
-                              thumbPath: thumb,
-                              onTap: () {
-                                showMemoryDetailSheet(
-                                  context,
-                                  memory,
-                                  imagePaths: widget.imagePaths,
-                                  options: MemoryDetailPresets.full,
-                                );
-                              },
-                            );
-                          },
+                      GraphNodeInsightPanel(
+                        node: widget.node,
+                        insight: buildGraphNodeInsight(
+                          node: widget.node,
+                          connectedMemories: memories,
+                          allMemories: ref.read(memoryListProvider),
+                          fragments: ref.read(memoryGraphFragmentsProvider),
+                          localeCode: ref.watch(languageProvider).languageCode,
+                        ),
+                        imagePaths: widget.imagePaths,
+                        localeCode: ref.watch(languageProvider).languageCode,
+                        translations: t,
+                        onMemoryTap: (memory) {
+                          showMemoryDetailSheet(
+                            context,
+                            memory,
+                            imagePaths: widget.imagePaths,
+                            options: MemoryDetailPresets.full,
+                          );
+                        },
+                        onProTap: () => requireProOrShowPaywall(
+                          context,
+                          ref,
+                          reasonKey: 'pro_reason_insights',
                         ),
                       ),
+                    if (memories.isEmpty)
                     SizedBox(
                       height: 40,
                       child: ListView.separated(

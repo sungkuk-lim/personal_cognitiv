@@ -1,6 +1,7 @@
 import '../models/memory.dart';
 import 'korean_person_names.dart';
 import 'memory_entity_extract.dart';
+import 'memory_semantic_extract.dart';
 import 'ocr_utils.dart';
 
 /// 엔티티에 저장하는 테마 태그 접두사 (스키마 변경 없이 Phase B~D 지원).
@@ -10,12 +11,20 @@ const String kTagFoodPrefix = 'tag:food:';
 const String kTagHobbyPrefix = 'tag:hobby:';
 const String kTagSeasonPrefix = 'tag:season:';
 const String kTagWeatherPrefix = 'tag:weather:';
-
+const String kTagEventPrefix = 'tag:event:';
+const String kTagInterestPrefix = 'tag:interest:';
+const String kTagContentPrefix = 'tag:content:';
 const kEmotionLexicon = {
   '행복', '기쁨', '슬픔', '감동', '그리움', '설렘', '후회', '감사', '실망', '평온', '즐거움', '뿌듯', '의문',
 };
 const kActivityLexicon = {
-  '식사', '저녁', '점심', '아침', '산책', '여행', '회식', '회의', '나들이', '운동', '관람', '쇼핑',
+  '산책', '여행', '회식', '회의', '나들이', '운동', '관람', '쇼핑',
+};
+
+/// 자연어 검색·필터용 — 그래프 위성과 달리 식사·식사 시간대 포함.
+const kQueryActivityLexicon = {
+  ...kActivityLexicon,
+  '식사', '저녁', '점심', '아침', '간식', '브런치',
 };
 const kFoodLexicon = {
   '탕수육', '자장면', '치킨', '삼겹살', '장어', '조개', '회', '라면', '피자', '커피', '빵', '떡볶이',
@@ -102,10 +111,13 @@ Memory enrichMemoryWithThemeTags(Memory memory, {String localeCode = 'ko'}) {
 
   addPrefixed(kTagEmotionPrefix, _scanLexicon(memory, kEmotionLexicon).take(2));
   final bundle = extractMemoryEntities(memory, localeCode: localeCode);
+  final semantic = extractSemanticFromText(memory.content);
   addPrefixed(kTagActivityPrefix, bundle.activities.take(2));
+  addPrefixed(kTagEventPrefix, [...bundle.events, ...semantic.events].take(2));
+  addPrefixed(kTagInterestPrefix, [...bundle.interests, ...semantic.interests].take(2));
+  addPrefixed(kTagContentPrefix, [...bundle.contents, ...semantic.contents].take(2));
   addPrefixed(kTagFoodPrefix, _scanLexicon(memory, kFoodLexicon).take(2));
-  addPrefixed(kTagHobbyPrefix, _scanLexicon(memory, kHobbyLexicon).take(2));
-  addPrefixed(kTagSeasonPrefix, _scanLexicon(memory, kSeasonLexicon).take(1));
+  addPrefixed(kTagHobbyPrefix, _scanLexicon(memory, kHobbyLexicon).take(2));  addPrefixed(kTagSeasonPrefix, _scanLexicon(memory, kSeasonLexicon).take(1));
   addPrefixed(kTagWeatherPrefix, _scanLexicon(memory, kWeatherLexicon).take(2));
 
   if (extras.isEmpty) return memory;

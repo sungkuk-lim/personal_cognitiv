@@ -1,4 +1,44 @@
-# GitHub Pages — 개인정보 처리방침 공개
+# GitHub Pages — 모담넷 홈페이지·정책 공개
+
+**공개 URL (저장소 `sungkuk-lim/personal_cognitiv` 기준):**
+
+```
+https://sungkuk-lim.github.io/personal_cognitiv/
+https://sungkuk-lim.github.io/personal_cognitiv/privacy.html
+https://sungkuk-lim.github.io/personal_cognitiv/terms.html
+https://sungkuk-lim.github.io/personal_cognitiv/user_guide.html
+```
+
+앱 기본 URL: `lib/core/app_urls.dart` (동일 주소)
+
+---
+
+## 방법 A — GitHub Actions (권장)
+
+1. GitHub 저장소 → **Settings → Pages**
+2. **Build and deployment** → Source: **GitHub Actions**
+3. `docs/` 변경 후 `main` 브랜치에 push
+4. Actions 워크플로 `.github/workflows/pages.yml` 자동 배포
+
+```powershell
+cd d:\android\personal_cognitiv
+git add docs/ .github/workflows/pages.yml
+git commit -m "docs: update site and enable Pages workflow"
+git push origin main
+```
+
+배포 완료: **Actions** 탭에서 `Deploy GitHub Pages` 확인
+
+---
+
+## 방법 B — 브랜치 배포 (수동)
+
+1. https://github.com/sungkuk-lim/personal_cognitiv/settings/pages
+2. Source: **Deploy from a branch**
+3. Branch: **main** / Folder: **/docs**
+4. Save
+
+---
 
 ## 1. GitHub CLI (gh) 준비
 

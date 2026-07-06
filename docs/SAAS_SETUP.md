@@ -9,6 +9,8 @@ MemoryOS Pro는 **Freemium + 월/연 구독** 구조입니다.
 
 AI 월간 한도 (Pro): 채팅 500 · 임베딩 300 · Vision 100 (서버 `consume_ai_quota`와 동일)
 
+**비즈니스·입금·Play 전체:** [TOTAL.md](TOTAL.md)
+
 ---
 
 ## 1. Supabase 마이그레이션

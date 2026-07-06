@@ -106,4 +106,22 @@ void main() {
     expect(satellites.people, contains('어머니'));
     expect(satellites.activities, isNot(contains('어머니와 저녁')));
   });
+
+  test('son dinner memory does not show meal time as activity satellites', () {
+    final memory = Memory(
+      id: 'son-dinner',
+      content: '아들과 저녁 식사를 했다.',
+      summary: '',
+      entities: const ['아들', '저녁', '식사'],
+      category: 'Social',
+      createdAt: DateTime(2026, 7, 5, 19),
+    );
+
+    final satellites = visibleGraphSatellitesForMemory(memory, localeCode: 'ko');
+    expect(satellites.people, contains('아들'));
+    expect(satellites.activities, isNot(contains('저녁')));
+    expect(satellites.activities, isNot(contains('식사')));
+    expect(satellites.food, isNot(contains('저녁')));
+    expect(satellites.food, isNot(contains('식사')));
+  });
 }

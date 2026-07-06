@@ -26,6 +26,9 @@ import '../../services/search_answer_service.dart';
 
 import '../../services/subscription_exceptions.dart';
 
+import '../../core/pro_feature_gate.dart';
+
+import '../../utils/graph_composite_query_examples.dart';
 import '../../utils/graph_keyword_focus.dart';
 import '../../utils/memory_query.dart';
 import '../../utils/memory_video_paths.dart';
@@ -41,26 +44,23 @@ import 'search_memory_result_tile.dart';
 class _ChatEntry {
 
   const _ChatEntry.user(this.text)
-
       : isUser = true,
-
         results = null,
+        searchQuery = null,
+        isLocalFallback = false;
 
-        searchQuery = null;
-
-
-
-  const _ChatEntry.assistant({this.text, this.results, this.searchQuery}) : isUser = false;
-
-
+  const _ChatEntry.assistant({
+    this.text,
+    this.results,
+    this.searchQuery,
+    this.isLocalFallback = false,
+  }) : isUser = false;
 
   final bool isUser;
-
   final String? text;
-
   final List<Memory>? results;
-
   final String? searchQuery;
+  final bool isLocalFallback;
 
 }
 
@@ -136,7 +136,12 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
 
 
 
-  void _pushResults(List<Memory> matches, {String? aiText, String searchQuery = ''}) {
+  void _pushResults(
+    List<Memory> matches, {
+    String? aiText,
+    String searchQuery = '',
+    bool isLocalFallback = false,
+  }) {
 
     final locale = ref.read(languageProvider).languageCode;
 
@@ -153,13 +158,10 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
     setState(() {
 
       _chatHistory.add(_ChatEntry.assistant(
-
         text: aiText ?? (matches.isNotEmpty ? header : null),
-
         results: matches,
-
         searchQuery: searchQuery,
-
+        isLocalFallback: isLocalFallback,
       ));
 
     });
@@ -274,7 +276,7 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
 
     final summary = parsed.isComposite ? describeMemoryQuery(parsed, localeCode: localeCode) : null;
 
-    _pushResults(matches, aiText: note ?? summary, searchQuery: query);
+    _pushResults(matches, aiText: note ?? summary, searchQuery: query, isLocalFallback: true);
 
   }
 
@@ -426,6 +428,30 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
 
 
 
+    if (requiresProForMemoryQuery(_activeQuery!) &&
+
+        requiresProCloudForCloudFeatures &&
+
+        !hasProEntitlement(ref.read(subscriptionStatusProvider))) {
+
+      final unlocked = await requireProOrShowPaywall(
+
+        context,
+
+        ref,
+
+        reasonKey: 'pro_reason_composite',
+
+      );
+
+      if (!mounted) return;
+
+      if (!unlocked) return;
+
+    }
+
+
+
     setState(() {
 
       _isLoading = true;
@@ -515,10 +541,7 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
         _runLocalSearch(query, t, note: t['search_local_only_note']);
 
         return;
-
       }
-
-
 
       await _runGraphFirstSearch(query, t, useCloudEmbedding: true);
 
@@ -670,7 +693,7 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
 
               ),
 
-              if (_chatHistory.isNotEmpty)
+              if (_chatHistory.isNotEmpty || _activeQuery != null)
 
                 IconButton(
 
@@ -756,7 +779,25 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
 
         Expanded(
 
-          child: ListView.builder(
+          child: _chatHistory.isEmpty
+
+              ? _SearchCompositeHints(
+
+                  localeCode: localeCode,
+
+                  t: t,
+
+                  onExampleTap: (example) {
+
+                    _searchController.text = example;
+
+                    _performSearch();
+
+                  },
+
+                )
+
+              : ListView.builder(
 
             padding: const EdgeInsets.all(16),
 
@@ -793,19 +834,41 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
                       ? Text(entry.text ?? '')
 
                       : entry.results != null && entry.results!.isNotEmpty
-
-                          ? SearchMemoryResultsList(
-
-                              memories: entry.results!,
-
-                              imagePaths: imagePaths,
-
-                              localeCode: localeCode,
-
-                              header: entry.text,
-
-                              searchQuery: entry.searchQuery ?? '',
-
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (entry.isLocalFallback) ...[
+                                  Container(
+                                    width: double.infinity,
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: colorScheme.tertiaryContainer.withValues(alpha: 0.55),
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.offline_bolt_outlined, size: 16, color: colorScheme.tertiary),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            t['search_local_fallback_banner']!,
+                                            style: TextStyle(fontSize: 11, height: 1.35, color: colorScheme.onTertiaryContainer),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                SearchMemoryResultsList(
+                                  memories: entry.results!,
+                                  imagePaths: imagePaths,
+                                  localeCode: localeCode,
+                                  header: entry.text,
+                                  searchQuery: entry.searchQuery ?? '',
+                                ),
+                              ],
                             )
 
                           : Text(entry.text ?? ''),
@@ -817,6 +880,128 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
             },
 
           ),
+
+        ),
+
+      ],
+
+    );
+
+  }
+
+}
+
+
+
+class _SearchCompositeHints extends StatelessWidget {
+
+  const _SearchCompositeHints({
+
+    required this.localeCode,
+
+    required this.t,
+
+    required this.onExampleTap,
+
+  });
+
+
+
+  final String localeCode;
+
+  final Map<String, String> t;
+
+  final void Function(String query) onExampleTap;
+
+
+
+  @override
+
+  Widget build(BuildContext context) {
+
+    final theme = Theme.of(context);
+
+    final colorScheme = theme.colorScheme;
+
+    final examples = graphCompositeQueryHints(localeCode, count: 6);
+
+
+
+    return ListView(
+
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+
+      children: [
+
+        Icon(Icons.psychology_alt_rounded, size: 48, color: colorScheme.primary.withValues(alpha: 0.85)),
+
+        const SizedBox(height: 12),
+
+        Text(
+
+          t['search_hint']!,
+
+          style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700, height: 1.35),
+
+        ),
+
+        const SizedBox(height: 20),
+
+        Row(
+
+          children: [
+
+            Icon(Icons.workspace_premium_rounded, size: 18, color: Colors.amber.shade700),
+
+            const SizedBox(width: 6),
+
+            Expanded(
+
+              child: Text(
+
+                t['search_composite_hint_title']!,
+
+                style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+
+              ),
+
+            ),
+
+          ],
+
+        ),
+
+        const SizedBox(height: 6),
+
+        Text(
+
+          t['search_composite_pro_note']!,
+
+          style: theme.textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant, height: 1.4),
+
+        ),
+
+        const SizedBox(height: 12),
+
+        Wrap(
+
+          spacing: 8,
+
+          runSpacing: 8,
+
+          children: examples.map((q) {
+
+            return ActionChip(
+
+              avatar: Icon(Icons.search_rounded, size: 16, color: colorScheme.primary),
+
+              label: Text(q, style: theme.textTheme.bodySmall),
+
+              onPressed: () => onExampleTap(q),
+
+            );
+
+          }).toList(),
 
         ),
 

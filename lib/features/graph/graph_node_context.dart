@@ -148,7 +148,15 @@ String graphNodeAiHook({
           .replaceAll('{kind}', node.subtitle),
     GraphNodeKind.memory =>
       t['graph_node_ai_hook_memory']!.replaceAll('{title}', node.title),
-    GraphNodeKind.activity || GraphNodeKind.goal || GraphNodeKind.emotion =>
+    GraphNodeKind.activity ||
+    GraphNodeKind.event ||
+    GraphNodeKind.content ||
+    GraphNodeKind.interest ||
+    GraphNodeKind.food ||
+    GraphNodeKind.hobby ||
+    GraphNodeKind.organization ||
+    GraphNodeKind.goal ||
+    GraphNodeKind.emotion =>
       t['graph_node_ai_hook_entity']!
           .replaceAll('{name}', node.title)
           .replaceAll('{kind}', node.subtitle),

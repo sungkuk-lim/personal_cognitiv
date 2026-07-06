@@ -1,11 +1,10 @@
 import 'graph_meaning_extract.dart';
 import 'memory_entity_extract.dart';
 
+import '../models/memory.dart';
 import 'korean_person_names.dart';
 
 import 'photo_memory_format.dart';
-
-import 'graph_meaning.dart';
 
 import 'ocr_utils.dart';
 
@@ -31,7 +30,7 @@ PhotoMemoryFields buildVoiceMemoryFields({
 
   final people = extractPeopleFromMemoryText(trimmed);
 
-  final summary = extractEventTitleFromText(trimmed, localeCode: localeCode);
+  final summary = inferHubTitleFromContent(trimmed, localeCode: localeCode);
   final resolvedSummary = summary.isNotEmpty
       ? summary
       : extractBestMeaningLineForGraph(trimmed, localeCode: localeCode);
@@ -45,6 +44,10 @@ PhotoMemoryFields buildVoiceMemoryFields({
     gpsPlace: gpsPlace,
 
     peopleNames: people,
+
+    speechText: trimmed,
+
+    localeCode: localeCode,
 
   );
 
@@ -150,6 +153,10 @@ List<String> buildVoiceGraphEntities({
 
   List<String> peopleNames = const [],
 
+  String? speechText,
+
+  String localeCode = 'ko',
+
 }) {
 
   final merged = <String>[
@@ -157,6 +164,29 @@ List<String> buildVoiceGraphEntities({
     ...sanitizeEntities(peopleNames),
 
   ];
+
+  if (speechText != null && speechText.trim().isNotEmpty) {
+    final bundle = extractMemoryEntities(
+      Memory(
+        id: 'voice_draft',
+        userId: 'local',
+        content: speechText.trim(),
+        summary: speechText.trim(),
+        entities: const [],
+        createdAt: DateTime.now(),
+        isLocalOnly: true,
+      ),
+      localeCode: localeCode,
+    );
+    merged.addAll([
+      ...bundle.people,
+      ...bundle.places,
+      ...bundle.events,
+      ...bundle.activities,
+      ...bundle.interests,
+      ...bundle.contents,
+    ]);
+  }
 
 
 
@@ -170,7 +200,7 @@ List<String> buildVoiceGraphEntities({
 
     if (RegExp(r'(?:연락|집으로|다음날|행동)').hasMatch(place)) return;
 
-    merged.add(place);
+    if (!merged.contains(place)) merged.add(place);
 
   }
 
@@ -178,14 +208,11 @@ List<String> buildVoiceGraphEntities({
 
   addPlace(speechPlace);
 
-  final gps = gpsPlace?.trim() ?? '';
+  addPlace(gpsPlace);
 
-  final speech = speechPlace?.trim() ?? '';
-
-  if (gps.isNotEmpty && gps != speech) {
-
-    addPlace(gps);
-
+  if (gpsPlace != null && gpsPlace.contains('해수욕장')) {
+    final beach = gpsPlace.trim();
+    if (beach.isNotEmpty && !merged.contains(beach)) merged.add(beach);
   }
 
 
@@ -210,13 +237,17 @@ String inferVoiceCategory(
 
 }) {
 
-  final hasPlace = (speechPlace?.trim().isNotEmpty ?? false) || (gpsPlace?.trim().isNotEmpty ?? false);
+  final hasPlace = speechPlace?.trim().isNotEmpty ?? false;
 
   if (hasPlace) return 'Travel';
 
 
 
-  const socialHints = ['친구', '만났', '놀러', '식사', '점심', '저녁', '술', '함께', '같이'];
+  const socialHints = [
+    '친구', '만났', '놀러', '식사', '점심', '저녁', '술', '함께', '같이',
+    '아들', '딸', '가족', '아내', '남편', '엄마', '아빠', '부모', '형', '동생',
+    '응원', '좋겠', '시험',
+  ];
 
   if (socialHints.any(text.contains)) return 'Social';
 

@@ -1,14 +1,25 @@
 import 'memory_detail_text.dart';
 import 'memory_entity_extract.dart';
 import '../models/memory.dart';
+import 'memory_entity_extract.dart';
 import 'graph_meaning_extract.dart';
 import 'ocr_utils.dart';
 
 /// 관계망 제목 — 그날·그 순간의 핵심 의미를 한 문장으로 표현합니다.
 String graphMeaningSentence(Memory memory, {required String localeCode}) {
   final bundle = extractMemoryEntities(memory, localeCode: localeCode);
-  if (bundle.eventTitle.isNotEmpty && isMeaningfulGraphSummary(bundle.eventTitle)) {
-    return _truncateMeaning(bundle.eventTitle, 58);
+  final hub = bundle.eventTitle.trim();
+  if (hub.isNotEmpty &&
+      isMeaningfulHubTitle(hub, localeCode: localeCode) &&
+      !_shouldPreferIncidentMeaningOverHubTitle(memory.content, hub)) {
+    return _truncateMeaning(hub, 58);
+  }
+
+  if (_hasIncidentLanguage(memory.content)) {
+    final incident = extractBestMeaningLineForGraph(memory.content, localeCode: localeCode);
+    if (incident.isNotEmpty && !_isGenericMeaningFallback(incident, localeCode)) {
+      return _truncateMeaning(incident, 58);
+    }
   }
 
   final contentLine = _bestMeaningFromContent(memory.content, localeCode);
@@ -68,9 +79,11 @@ String buildGroupGraphMeaning(List<Memory> memories, {required String localeCode
 }
 
 String? _bestMeaningFromContent(String raw, String localeCode) {
-  final line = extractBestMeaningLineForGraph(raw, localeCode: localeCode);
-  if (line.isEmpty || isGraphJunkTitle(line)) return null;
-  return line;
+  final composed = composeMemoryHubTitle(raw, localeCode: localeCode);
+  if (isMeaningfulHubTitle(composed, localeCode: localeCode)) return composed;
+  final line = hubTitleFromContentLine(raw, localeCode: localeCode);
+  if (line.isNotEmpty) return line;
+  return null;
 }
 
 String? _firstMeaningfulContentLine(String raw) {
@@ -117,7 +130,7 @@ String _synthesizeMeaningFromSignals(Memory memory, String localeCode) {
 }
 
 bool _isGenericMeaningFallback(String text, String localeCode) {
-  return text == (localeCode == 'ko' ? '기억' : 'Memory');
+  return isGenericHubTitle(text, localeCode: localeCode);
 }
 
 String _formatShortDate(DateTime dt, String localeCode) {
@@ -129,6 +142,19 @@ String _formatShortDate(DateTime dt, String localeCode) {
 String _truncateMeaning(String text, int maxLen) {
   if (text.length <= maxLen) return text;
   return '${text.substring(0, maxLen - 1)}…';
+}
+
+bool _hasIncidentLanguage(String text) {
+  return RegExp(r'실망|엉망|없어|사라|연락|이상|의문|갈등|문제|실종').hasMatch(text);
+}
+
+/// 사건·갈등 본문이 있을 때 음식·여행 키워드만 모은 허브 제목보다 본문 의미를 우선합니다.
+bool _shouldPreferIncidentMeaningOverHubTitle(String content, String hubTitle) {
+  if (!_hasIncidentLanguage(content)) return false;
+  final hub = hubTitle.replaceAll(RegExp(r'[.!?…]+$'), '').trim();
+  if (hub.isEmpty) return false;
+  if (_hasIncidentLanguage(hub)) return false;
+  return true;
 }
 
 /// 음성·텍스트 저장 시 summary에 넣을 핵심 의미 한 문장 (메타데이터 제외).

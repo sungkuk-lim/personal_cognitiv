@@ -6,6 +6,7 @@ import '../../core/auth_config.dart';
 import '../../core/env.dart';
 import '../../core/prefs.dart';
 import '../../providers/app_providers.dart';
+import '../../providers/memory_notifier.dart';
 import '../../services/local_memory_store.dart';
 import 'password_recovery_screen.dart';
 
@@ -158,7 +159,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
       }
       final prefs = ref.read(preferencesProvider);
       await writeGuestMode(prefs, false);
+      await writePrivacyLocalMode(prefs, false);
       ref.read(guestModeProvider.notifier).state = false;
+      ref.read(privacyLocalModeProvider.notifier).state = false;
+      await ref.read(memoryListProvider.notifier).reload();
     } on AuthException catch (e) {
       setState(() => _error = _friendlyAuthError(e.message));
     } catch (e) {

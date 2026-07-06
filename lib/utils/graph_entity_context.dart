@@ -44,8 +44,13 @@ class GraphEntityContext {
 String? satelliteBadgeFromVisible(GraphMemorySatellites s, {required String localeCode}) {
   final people = s.people.length;
   final places = s.places.length;
-  final activities = s.activities.length;
-  final misc = s.organizations.length + s.goals.length + s.emotions.length;
+  final activities = s.activities.length + s.events.length + s.hobbies.length;
+  final misc = s.organizations.length +
+      s.goals.length +
+      s.emotions.length +
+      s.interests.length +
+      s.contents.length +
+      s.food.length;
   final total = people + places + activities + misc;
   if (total == 0) return null;
 

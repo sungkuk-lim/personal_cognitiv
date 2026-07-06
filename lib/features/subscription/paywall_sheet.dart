@@ -141,6 +141,11 @@ class _PaywallSheetState extends ConsumerState<_PaywallSheet> {
               const SizedBox(height: 12),
               Text(reason, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.45)),
             ],
+            const SizedBox(height: 8),
+            Text(
+              t['pro_local_ai_hint']!,
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.45, fontSize: 14),
+            ),
             const SizedBox(height: 20),
             ...SubscriptionConfig.proBenefitKeys.map(
               (key) => Padding(
@@ -234,6 +239,12 @@ class _PaywallSheetState extends ConsumerState<_PaywallSheet> {
               t['pro_free_hint']!,
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.4),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              t['pro_subscription_legal']!,
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.35),
             ),
             const SizedBox(height: 12),
             TextButton(

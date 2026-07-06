@@ -41,16 +41,6 @@ if (Test-Path $secretsPath) {
     if ($secrets.REVENUECAT_IOS_KEY) {
         $defines += "--dart-define=REVENUECAT_IOS_KEY=$($secrets.REVENUECAT_IOS_KEY)"
     }
-    if ($secrets.AI_OMAKASE_API_KEY) {
-        $defines += "--dart-define=AI_OMAKASE_API_KEY=$($secrets.AI_OMAKASE_API_KEY)"
-        Write-Host "Using AI_OMAKASE_API_KEY for cloud STT" -ForegroundColor DarkGray
-    }
-    if ($secrets.AI_OMAKASE_STT_URL) {
-        $defines += "--dart-define=AI_OMAKASE_STT_URL=$($secrets.AI_OMAKASE_STT_URL)"
-    }
-    if ($secrets.AI_OMAKASE_STT_MODEL) {
-        $defines += "--dart-define=AI_OMAKASE_STT_MODEL=$($secrets.AI_OMAKASE_STT_MODEL)"
-    }
 } else {
     Write-Host "No secrets.local.json — guest/local save still works; cloud/AI needs keys" -ForegroundColor Yellow
 }

@@ -43,6 +43,8 @@ class MemoryPulseWidgetProvider : HomeWidgetProvider() {
                     widgetData.getString("widget_graph_label", context.getString(R.string.widget_graph)),
                 )
 
+                applyWidgetTheme(context, widgetData)
+
                 val openApp = HomeWidgetLaunchIntent.getActivity(
                     context,
                     MainActivity::class.java,

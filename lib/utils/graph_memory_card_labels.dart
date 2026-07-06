@@ -2,6 +2,7 @@ import '../models/memory.dart';
 import 'graph_meaning.dart';
 import 'memory_grouping.dart';
 import 'memory_place_cache.dart';
+import 'memory_place_policy.dart';
 import 'ocr_utils.dart';
 import 'photo_memory_format.dart';
 import 'voice_memory_format.dart';
@@ -95,16 +96,15 @@ String graphMemoryMetaLine(
 String graphMemoryAddressLine(
   Memory memory,
   Map<String, String> placeCache,
-  Map<String, String> fullAddressCache,
-) {
-  final full = fullAddressFromCache(memory, fullAddressCache);
-  if (full != null && full.isNotEmpty) return full;
-
-  final short = placeNameFromCache(memory, placeCache);
-  if (short != null && short.isNotEmpty && !isLikelyLotNumber(short) && !isLatLngLabel(short)) {
-    return short;
-  }
-  return '';
+  Map<String, String> fullAddressCache, {
+  String localeCode = 'ko',
+}) {
+  return displayPlaceAddress(
+    memory,
+    placeCache,
+    fullAddressCache,
+    localeCode: localeCode,
+  );
 }
 
 String? _speechPlaceForGraph(Memory memory) {

@@ -106,10 +106,17 @@ abstract final class AppGraphColors {
   static const person = Color(0xFFE91E63);
   static const place = Color(0xFF00897B);
   static const activity = Color(0xFF7E57C2);
+  static const event = Color(0xFF673AB7);
+  static const content = Color(0xFF42A5F5);
+  static const interest = Color(0xFFFF9800);
+  static const food = Color(0xFFFF5722);
+  static const hobby = Color(0xFF009688);
+  static const organization = Color(0xFF455A64);
   static const memory = Color(0xFF5C6BC0);
   static const group = Color(0xFF546E7A);
   static const eventHub = Color(0xFF5C6BC0);
   static const semanticEdge = Color(0xFF7E57C2);
   static const relationEdge = Color(0xFF2E7D32);
   static const bridgeEdge = Color(0xFFFFB300);
+  static const selfPerson = Color(0xFF7986CB);
 }

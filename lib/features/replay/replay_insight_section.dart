@@ -35,9 +35,23 @@ class ReplayInsightSection extends ConsumerWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 4, 4, 10),
-          child: Text(
-            t['replay_insights_title']!,
-            style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                t['replay_insights_title']!,
+                style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              if (t['replay_insights_hint'] != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  t['replay_insights_hint']!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.55),
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
         SizedBox(
@@ -128,13 +142,15 @@ class _InsightChipCard extends StatelessWidget {
                 Row(
                   children: [
                     Icon(icon, size: 22, color: color),
+                    const SizedBox(width: 6),
+                    _CountBadge(count: card.memoryCount, color: color),
                     const Spacer(),
                     IconButton(
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                       icon: Icon(Icons.menu_book_rounded, size: 18, color: color.withValues(alpha: 0.85)),
                       onPressed: onOpenStory,
-                      tooltip: 'Story',
+                      tooltip: localeCode == 'ko' ? '이야기' : 'Story',
                     ),
                     if (onPlayHighlight != null)
                       Icon(Icons.play_circle_fill_rounded, size: 22, color: color),
@@ -150,8 +166,12 @@ class _InsightChipCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   slideCount > 0
-                      ? (localeCode == 'ko' ? '사진·동영상 $slideCount' : '$slideCount photos & videos')
+                      ? (localeCode == 'ko'
+                          ? '${card.subtitle} · 사진·동영상 $slideCount'
+                          : '${card.subtitle} · $slideCount photos & videos')
                       : card.subtitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: theme.colorScheme.onSurface.withValues(alpha: 0.65),
                   ),
@@ -160,6 +180,32 @@ class _InsightChipCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _CountBadge extends StatelessWidget {
+  const _CountBadge({required this.count, required this.color});
+
+  final int count;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.18),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$count',
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w800,
+              fontSize: 11,
+            ),
       ),
     );
   }
