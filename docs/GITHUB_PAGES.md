@@ -1,107 +1,87 @@
-# GitHub Pages — 모담넷 홈페이지·정책 공개
-
-**공개 URL (저장소 `sungkuk-lim/personal_cognitiv` 기준):**
-
-```
-https://sungkuk-lim.github.io/personal_cognitiv/
-https://sungkuk-lim.github.io/personal_cognitiv/privacy.html
-https://sungkuk-lim.github.io/personal_cognitiv/terms.html
-https://sungkuk-lim.github.io/personal_cognitiv/user_guide.html
-```
-
-앱 기본 URL: `lib/core/app_urls.dart` (동일 주소)
-
----
-
-## 방법 A — GitHub Actions (권장)
-
-1. GitHub 저장소 → **Settings → Pages**
-2. **Build and deployment** → Source: **GitHub Actions**
-3. `docs/` 변경 후 `main` 브랜치에 push
-4. Actions 워크플로 `.github/workflows/pages.yml` 자동 배포
-
-```powershell
-cd d:\android\personal_cognitiv
-git add docs/ .github/workflows/pages.yml
-git commit -m "docs: update site and enable Pages workflow"
-git push origin main
-```
-
-배포 완료: **Actions** 탭에서 `Deploy GitHub Pages` 확인
-
----
-
-## 방법 B — 브랜치 배포 (수동)
-
-1. https://github.com/sungkuk-lim/personal_cognitiv/settings/pages
-2. Source: **Deploy from a branch**
-3. Branch: **main** / Folder: **/docs**
-4. Save
-
----
-
-## 1. GitHub CLI (gh) 준비
-
-설치 후 `gh` 명령이 안 되면 **PowerShell을 새로 열거나** 아래 실행:
-
-```powershell
-. .\scripts\use_gh.ps1
-```
-
-또는 전체 경로:
-
-```powershell
-& "C:\Program Files\GitHub CLI\gh.exe" auth login
-```
-
-## 2. GitHub 로그인 (최초 1회)
-
-```powershell
-. .\scripts\use_gh.ps1
-gh auth login
-# GitHub.com → HTTPS → Login with a web browser
-```
-
-## 3. 저장소 생성 및 푸시
-
-```powershell
-cd d:\android\personal_cognitiv
-
-gh repo create personal_cognitiv --public --source=. --remote=origin --push
-```
-
-이미 원격이 있으면:
-
-```powershell
-git remote add origin https://github.com/YOUR_USER/personal_cognitiv.git
-git push -u origin main
-```
-
-## 3. Pages 활성화
-
-1. https://github.com/YOUR_USER/personal_cognitiv/settings/pages
-2. **Build and deployment** → Source: **Deploy from a branch**
-3. Branch: **main** / Folder: **/docs**
-4. Save
-
-1~2분 후 접속:
-
-```
-https://YOUR_USER.github.io/personal_cognitiv/privacy.html
-https://YOUR_USER.github.io/personal_cognitiv/user_guide.html
-https://YOUR_USER.github.io/personal_cognitiv/
-```
-
-Play Console **개인정보 처리방침 URL**에 privacy 주소를 입력하세요.  
-앱 **환경설정 → 모담넷 이용 가이드 → 웹에서 보기**는 `user_guide.html` 주소를 사용합니다 (`lib/core/app_urls.dart`의 `USER_GUIDE_URL`로 변경 가능).
-
-## 4. 로컬에서만 준비 (이미 완료)
-
-- `docs/privacy.html` — 정책 본문
-- `docs/user_guide.html` — 이용 가이드 (기능·관계망·환경설정)
-- `docs/index.html` — 가이드·개인정보 링크 허브
-- `docs/.nojekyll` — Jekyll 비활성화
-
-## 5. 정책 수정 시
-
-`docs/privacy.html` 수정 → commit → push → Pages 자동 갱신
+# GitHub Pages — 모담넷 홈페이지·정책 공개
+
+**브랜드:** theNext_modamnet  
+**GitHub 조직/계정:** `theNext-modamnet` (GitHub 사용자명에는 `_` 불가 → **하이픈** 사용)
+
+**공개 URL (저장소 `theNext-modamnet/personal_cognitiv` 기준):**
+
+```
+https://thenext-modamnet.github.io/personal_cognitiv/
+https://thenext-modamnet.github.io/personal_cognitiv/privacy.html
+https://thenext-modamnet.github.io/personal_cognitiv/terms.html
+https://thenext-modamnet.github.io/personal_cognitiv/user_guide.html
+```
+
+앱 기본 URL: `lib/core/app_urls.dart` (동일 주소)
+
+---
+
+## GitHub 조직 이전 (sungkuk-lim → theNext-modamnet)
+
+코드·문서 URL은 이미 `theNext-modamnet` 기준으로 맞춰 두었습니다. **실제 사이트가 열리려면** GitHub에서 아래를 진행하세요.
+
+1. https://github.com/organizations/plan → **Free** 조직 생성  
+   - Organization name: **`theNext-modamnet`** (표시 이름은 `theNext_modamnet` 가능)
+2. `sungkuk-lim/personal_cognitiv` → **Settings → General → Transfer ownership** → `theNext-modamnet` 조직으로 이전  
+   (또는 조직에 새로 push 후 Pages만 활성화)
+3. https://github.com/organizations/theNext-modamnet/settings/pages → **GitHub Actions** 소스 선택
+4. `main` push 후 Actions에서 `Deploy GitHub Pages` 성공 확인
+
+이전 전까지는 기존 `sungkuk-lim.github.io/...` URL도 동작할 수 있습니다. Play 등록은 **이전 완료 후** 새 URL을 사용하세요.
+
+### URL을 더 짧게 (선택)
+
+저장소 이름을 `theNext-modamnet.github.io`로 바꾸고 `docs/`를 루트에 두면:
+
+```
+https://thenext-modamnet.github.io/privacy.html
+```
+
+---
+
+## 방법 A — GitHub Actions (권장)
+
+1. GitHub 저장소 → **Settings → Pages**
+2. **Build and deployment** → Source: **GitHub Actions**
+3. `docs/` 변경 후 `main` 브랜치에 push
+4. Actions 워크플로 `.github/workflows/pages.yml` 자동 배포
+
+```powershell
+cd d:\android\personal_cognitiv
+.\scripts\deploy_pages.ps1
+```
+
+배포 완료: **Actions** 탭에서 `Deploy GitHub Pages` 확인
+
+---
+
+## 방법 B — 브랜치 배포 (수동)
+
+1. https://github.com/theNext-modamnet/personal_cognitiv/settings/pages
+2. Source: **Deploy from a branch**
+3. Branch: **main** / Folder: **/docs**
+4. Save
+
+---
+
+## gh CLI (선택)
+
+```powershell
+. .\scripts\use_gh.ps1
+gh auth login
+```
+
+## 4. 로컬에서만 준비 (이미 완료)
+
+- `docs/privacy.html` — 정책 본문
+- `docs/user_guide.html` — 이용 가이드
+- `docs/index.html` — 랜딩·링크 허브
+- `docs/.nojekyll` — Jekyll 비활성화
+
+## 5. 정책 수정 시
+
+`docs/privacy.html` 수정 → commit → push → Pages 자동 갱신
+
+Play Console **개인정보처리방침 URL:**  
+`https://thenext-modamnet.github.io/personal_cognitiv/privacy.html`
+

@@ -28,8 +28,8 @@ git push origin HEAD
 
 Write-Host ""
 Write-Host "Done. Enable GitHub Pages:"
-Write-Host "  https://github.com/sungkuk-lim/personal_cognitiv/settings/pages"
+Write-Host "  https://github.com/theNext-modamnet/personal_cognitiv/settings/pages"
 Write-Host "  Source: GitHub Actions"
 Write-Host ""
 Write-Host "Site URL:"
-Write-Host "  https://sungkuk-lim.github.io/personal_cognitiv/"
+Write-Host "  https://thenext-modamnet.github.io/personal_cognitiv/"

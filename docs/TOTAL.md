@@ -259,7 +259,7 @@ Webhook → Supabase revenuecat-webhook
 
 | URL | 파일 | 용도 |
 |-----|------|------|
-| `https://USER.github.io/personal_cognitiv/` | `docs/index.html` (만들 것) | 랜딩 |
+| `https://thenext-modamnet.github.io/personal_cognitiv/` | `docs/index.html` | 랜딩 |
 | `.../privacy.html` | `docs/privacy.html` | **Play 필수** |
 | `.../terms.html` | `docs/terms.html` | 이용약관 |
 | `.../guide.html` | MODAMNET 가이드 요약 | 선택 |

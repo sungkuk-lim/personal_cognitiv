@@ -13,8 +13,8 @@
 |---|------|------|
 | 1 | Google Play 개발자 계정 ($25, 1회) | ☐ |
 | 2 | 릴리스 AAB/APK 서명 (`android/key.properties`) | ☐ |
-| 3 | 개인정보 URL (HTTPS) | `https://sungkuk-lim.github.io/personal_cognitiv/privacy.html` |
-| 4 | 이용약관 URL | `https://sungkuk-lim.github.io/personal_cognitiv/terms.html` |
+| 3 | 개인정보 URL (HTTPS) | `https://thenext-modamnet.github.io/personal_cognitiv/privacy.html` |
+| 4 | 이용약관 URL | `https://thenext-modamnet.github.io/personal_cognitiv/terms.html` |
 | 5 | GitHub Pages 활성화 | [GITHUB_PAGES.md](GITHUB_PAGES.md) |
 | 6 | RevenueCat 프로젝트 + Android SDK 키 | `secrets.local.json` |
 

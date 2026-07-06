@@ -67,7 +67,7 @@ Play Console에 **공개 HTTPS URL** 필수.
 ### 방법 A: GitHub Pages (무료)
 1. 저장소 Settings → Pages → Source: `main` / `/docs`
 2. `docs/privacy.html` 배포 후 URL 예:
-   `https://YOUR_USER.github.io/personal_cognitiv/privacy.html`
+   `https://thenext-modamnet.github.io/personal_cognitiv/privacy.html`
 
 ### 방법 B: Supabase Storage (이미 사용 중)
 `docs/PRIVACY_POLICY.md`를 public bucket에 업로드 후 public URL 사용
