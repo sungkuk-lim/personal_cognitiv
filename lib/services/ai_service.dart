@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -7,6 +8,9 @@ import '../core/env.dart';
 import 'subscription_exceptions.dart';
 
 /// OpenAI 호출을 Edge Function으로 우선 라우팅해 키 노출·남용을 줄입니다.
+///
+/// 프로덕션(`USE_EDGE_PROXY=true`)에서는 **쿼터·구독 게이트를 우회하는
+/// 클라이언트 직접 OpenAI 폴백을 하지 않습니다.** (개발자 원가 방어)
 class AiService {
   AiService._();
   static final AiService instance = AiService._();
@@ -51,6 +55,16 @@ class AiService {
     }
   }
 
+  /// 구독·쿼터 예외는 절대 삼키지 않습니다. Edge 사용 시 직접 OpenAI 폴백 금지.
+  Future<Never> _failClosedAfterEdge(Object e, StackTrace stack, String reason) async {
+    if (e is SubscriptionRequiredException || e is QuotaExceededException) {
+      Error.throwWithStackTrace(e, stack);
+    }
+    debugPrint('Edge $reason failed (no direct OpenAI fallback): $e');
+    await CrashReporting.recordError(e, stack, reason: reason);
+    Error.throwWithStackTrace(e, stack);
+  }
+
   Future<Map<String, dynamic>> _postOpenAiDirect(Map<String, dynamic> body) async {
     final key = AppEnv.openAiApiKey;
     if (key.isEmpty) {
@@ -79,8 +93,7 @@ class AiService {
         });
         return List<double>.from(data['embedding'] as List);
       } catch (e, stack) {
-        debugPrint('Edge embedding failed: $e');
-        await CrashReporting.recordError(e, stack, reason: 'edge_embedding');
+        await _failClosedAfterEdge(e, stack, 'edge_embedding');
       }
     }
 
@@ -122,8 +135,7 @@ class AiService {
         });
         return data['content'] as String;
       } catch (e, stack) {
-        debugPrint('Edge chat failed: $e');
-        await CrashReporting.recordError(e, stack, reason: 'edge_chat_json');
+        await _failClosedAfterEdge(e, stack, 'edge_chat_json');
       }
     }
 
@@ -154,8 +166,7 @@ class AiService {
         });
         return data['content'] as String;
       } catch (e, stack) {
-        debugPrint('Edge chat failed: $e');
-        await CrashReporting.recordError(e, stack, reason: 'edge_chat_json');
+        await _failClosedAfterEdge(e, stack, 'edge_chat_text');
       }
     }
 
@@ -187,8 +198,7 @@ class AiService {
         });
         return jsonDecode(data['content'] as String) as Map<String, dynamic>;
       } catch (e, stack) {
-        debugPrint('Edge vision failed: $e');
-        await CrashReporting.recordError(e, stack, reason: 'edge_vision');
+        await _failClosedAfterEdge(e, stack, 'edge_vision');
       }
     }
 

@@ -9,6 +9,7 @@ import '../../providers/memory_notifier.dart';
 import '../../utils/memory_keyword_ui.dart';
 import '../../models/graph_ai_snapshot.dart';
 import '../../models/memory.dart';
+import '../../utils/memory_entity_extract.dart';
 import '../../utils/memory_grouping.dart';
 import '../../utils/memory_image_paths.dart';
 import '../../utils/memory_video_paths.dart';
@@ -138,6 +139,10 @@ String graphNodeAiHook({
   return switch (node.kind) {
     GraphNodeKind.person =>
       t['graph_node_ai_hook_person']!.replaceAll('{name}', node.title),
+    GraphNodeKind.pet =>
+      t['graph_node_ai_hook_entity']!
+          .replaceAll('{name}', node.title)
+          .replaceAll('{kind}', node.subtitle),
     GraphNodeKind.place =>
       t['graph_node_ai_hook_place']!.replaceAll('{name}', node.title),
     GraphNodeKind.group =>
@@ -242,6 +247,193 @@ bool graphNodeHasVideo({
     }
   }
   return false;
+}
+
+class GraphNodeMediaInfo {
+  const GraphNodeMediaInfo({
+    this.thumbnailPath,
+    this.photoCount = 0,
+    this.hasVideo = false,
+  });
+
+  static const empty = GraphNodeMediaInfo();
+
+  final String? thumbnailPath;
+  final int photoCount;
+  final bool hasVideo;
+}
+
+/// 노드별 미디어 정보를 한 번에 계산해 스크롤·pan 중 O(n²) 조회를 막습니다.
+///
+/// 위성(사람·장소·활동 등)은 전용 앵커 메모가 없으면 **관련 기억**의
+/// 최신 사진·동영상을 썸네일로 사용합니다.
+Map<String, GraphNodeMediaInfo> buildGraphNodeMediaIndex({
+  required List<GraphNodeData> nodes,
+  required List<Memory> memories,
+  required Map<String, List<String>> imagePaths,
+  required Map<String, List<String>> videoPaths,
+  List<GraphEdgeData> edges = const [],
+  String localeCode = 'ko',
+}) {
+  final primaryMemories = memories.where(isLayoutPrimaryMemory).toList();
+  final anchorNewest = <String, Memory>{};
+  final anchorPhotoCount = <String, int>{};
+  final anchorHasVideo = <String, bool>{};
+
+  for (final memory in memories) {
+    final anchorId = graphNoteAnchorNodeId(memory);
+    if (anchorId == null) continue;
+    final prev = anchorNewest[anchorId];
+    if (prev == null || memory.createdAt.isAfter(prev.createdAt)) {
+      anchorNewest[anchorId] = memory;
+    }
+    anchorPhotoCount[anchorId] =
+        (anchorPhotoCount[anchorId] ?? 0) + imageCountForMemoryId(memory.id, imagePaths);
+    if (memoryHasVideo(memory.id, videoPaths)) {
+      anchorHasVideo[anchorId] = true;
+    }
+  }
+
+  // 라벨 → 관련 기억(미디어 있는 것만, 최신 우선) — 위성 썸네일용
+  final labelNewestWithMedia = <String, Memory>{};
+  final labelPhotoCount = <String, int>{};
+  final labelHasVideo = <String, bool>{};
+
+  void considerLabel(String rawLabel, Memory memory) {
+    final label = rawLabel.trim();
+    if (label.isEmpty) return;
+    final key = label.toLowerCase();
+    final photos = imageCountForMemoryId(memory.id, imagePaths);
+    final hasVideo = memoryHasVideo(memory.id, videoPaths);
+    if (photos == 0 && !hasVideo) return;
+    final prev = labelNewestWithMedia[key];
+    if (prev == null || memory.createdAt.isAfter(prev.createdAt)) {
+      labelNewestWithMedia[key] = memory;
+    }
+    labelPhotoCount[key] = (labelPhotoCount[key] ?? 0) + photos;
+    if (hasVideo) labelHasVideo[key] = true;
+  }
+
+  for (final memory in primaryMemories) {
+    final bundle = extractMemoryEntities(memory, localeCode: localeCode);
+    for (final p in bundle.people) {
+      considerLabel(p, memory);
+    }
+    for (final p in bundle.places) {
+      considerLabel(p, memory);
+    }
+    for (final a in bundle.activities) {
+      considerLabel(a, memory);
+    }
+    for (final e in bundle.events) {
+      considerLabel(e, memory);
+    }
+    for (final o in bundle.organizations) {
+      considerLabel(o, memory);
+    }
+  }
+
+  final result = <String, GraphNodeMediaInfo>{};
+  for (final node in nodes) {
+    if (node.id.startsWith('memory_') ||
+        node.id.startsWith('event_hub_') ||
+        node.id.startsWith('entity_note_')) {
+      final memoryId = node.id.replaceFirst(RegExp(r'^(memory_|event_hub_|entity_note_)'), '');
+      result[node.id] = GraphNodeMediaInfo(
+        thumbnailPath: primaryMediaThumbForMemoryId(memoryId, imagePaths, videoPaths),
+        photoCount: imageCountForMemoryId(memoryId, imagePaths),
+        hasVideo: memoryHasVideo(memoryId, videoPaths),
+      );
+      continue;
+    }
+
+    if (node.id.startsWith('group_')) {
+      Memory? newest;
+      var photos = 0;
+      var hasVideo = false;
+      for (final memory in connectedMemoriesForNode(
+        node: node,
+        allMemories: memories,
+        edges: edges,
+      )) {
+        final p = imageCountForMemoryId(memory.id, imagePaths);
+        final v = memoryHasVideo(memory.id, videoPaths);
+        photos += p;
+        if (v) hasVideo = true;
+        if (p > 0 || v) {
+          if (newest == null || memory.createdAt.isAfter(newest.createdAt)) {
+            newest = memory;
+          }
+        }
+      }
+      result[node.id] = GraphNodeMediaInfo(
+        thumbnailPath: newest == null
+            ? null
+            : primaryMediaThumbForMemoryId(newest.id, imagePaths, videoPaths),
+        photoCount: photos,
+        hasVideo: hasVideo,
+      );
+      continue;
+    }
+
+    final anchorId = canonicalGraphAnchorNodeId(node.id, anchorLabel: node.title.trim());
+    final newestAnchor = anchorNewest[anchorId];
+    if (newestAnchor != null) {
+      result[node.id] = GraphNodeMediaInfo(
+        thumbnailPath: primaryMediaThumbForMemoryId(newestAnchor.id, imagePaths, videoPaths),
+        photoCount: anchorPhotoCount[anchorId] ?? 0,
+        hasVideo: anchorHasVideo[anchorId] ?? false,
+      );
+      continue;
+    }
+
+    // 관련 기억 폴백 (사람·장소·활동 위성)
+    final labelKey = node.title.trim().toLowerCase();
+    final related = labelNewestWithMedia[labelKey];
+    if (related != null) {
+      result[node.id] = GraphNodeMediaInfo(
+        thumbnailPath: primaryMediaThumbForMemoryId(related.id, imagePaths, videoPaths),
+        photoCount: labelPhotoCount[labelKey] ?? 0,
+        hasVideo: labelHasVideo[labelKey] ?? false,
+      );
+      continue;
+    }
+
+    // 그래프 선으로 연결된 기억
+    if (edges.isNotEmpty) {
+      Memory? newest;
+      var photos = 0;
+      var hasVideo = false;
+      for (final memory in connectedMemoriesForNode(
+        node: node,
+        allMemories: memories,
+        edges: edges,
+      )) {
+        final p = imageCountForMemoryId(memory.id, imagePaths);
+        final v = memoryHasVideo(memory.id, videoPaths);
+        photos += p;
+        if (v) hasVideo = true;
+        if (p > 0 || v) {
+          if (newest == null || memory.createdAt.isAfter(newest.createdAt)) {
+            newest = memory;
+          }
+        }
+      }
+      if (newest != null || photos > 0 || hasVideo) {
+        result[node.id] = GraphNodeMediaInfo(
+          thumbnailPath: newest == null
+              ? null
+              : primaryMediaThumbForMemoryId(newest.id, imagePaths, videoPaths),
+          photoCount: photos,
+          hasVideo: hasVideo,
+        );
+        continue;
+      }
+    }
+
+    result[node.id] = GraphNodeMediaInfo.empty;
+  }
+  return result;
 }
 
 String buildGraphNodeAiSystemPrompt({

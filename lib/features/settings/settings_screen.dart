@@ -20,10 +20,14 @@ import '../../services/memory_pulse_worker.dart';
 import '../../services/graph_cleanup_service.dart';
 import '../../services/location_permission_service.dart';
 import '../../services/local_memory_store.dart';
+import '../../services/subscription_service.dart';
 import '../../services/account_deletion_service.dart';
 import '../../services/memory_backup_service.dart';
 import '../../services/memory_cloud_sync_service.dart';
 import '../../services/home_widget_service.dart';
+import '../../services/app_lock_service.dart';
+import '../../services/firebase_email_auth_service.dart';
+import '../../features/auth/pattern_lock_screen.dart';
 import '../../features/legal/legal_consent_dialog.dart';
 import '../../features/legal/legal_document_screen.dart';
 import '../../features/subscription/paywall_sheet.dart';
@@ -90,17 +94,38 @@ class SettingsScreen extends ConsumerWidget {
     return Scaffold(
       appBar: AppBar(title: Text(t['settings']!)),
       body: ListView(
+        addRepaintBoundaries: true,
+        addAutomaticKeepAlives: true,
         children: [
           SettingsSectionHeader(
-            title: t['settings_sec_plan']!,
-            subtitle: t['settings_sec_plan_sub']!,
-            icon: Icons.workspace_premium_outlined,
+            title: t['settings_sec_help']!,
+            subtitle: t['settings_sec_help_sub']!,
+            icon: Icons.menu_book_rounded,
           ),
           ListTile(
             leading: const Icon(Icons.menu_book_rounded),
             title: Text(t['user_guide_title']!),
             subtitle: Text(t['user_guide_subtitle']!),
             onTap: () => _showUsageGuide(context, t),
+          ),
+          ListTile(
+            leading: const Icon(Icons.picture_as_pdf_outlined),
+            title: Text(t['user_guide_open_pdf']!),
+            subtitle: Text(t['user_guide_open_pdf_hint']!),
+            onTap: () => _openUserGuidePdf(context, t),
+          ),
+          ListTile(
+            leading: const Icon(Icons.language_outlined),
+            title: Text(t['user_guide_open_web']!),
+            subtitle: Text(t['user_guide_open_web_hint']!),
+            trailing: const Icon(Icons.open_in_new, size: 18),
+            onTap: () => _openUserGuideWeb(context, t),
+          ),
+          const Divider(),
+          SettingsSectionHeader(
+            title: t['settings_sec_plan']!,
+            subtitle: t['settings_sec_plan_sub']!,
+            icon: Icons.workspace_premium_outlined,
           ),
           ListTile(
             leading: Icon(
@@ -117,6 +142,23 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => showProPaywall(context, ref),
           ),
           ListTile(
+            leading: const Icon(Icons.refresh_rounded),
+            title: Text(t['pro_refresh_status']!),
+            subtitle: Text(t['pro_refresh_status_hint']!),
+            onTap: () async {
+              final refreshed = await SubscriptionService.instance.refreshEntitlements();
+              if (!context.mounted) return;
+              ref.read(subscriptionStatusProvider.notifier).state = refreshed;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    refreshed.isProActive ? t['sub_refresh_pro']! : t['sub_refresh_free']!,
+                  ),
+                ),
+              );
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.cloud_sync_rounded),
             title: Text(t['pro_saas_title']!),
             subtitle: Text(t['pro_saas_subtitle']!),
@@ -129,6 +171,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           SettingsSectionHeader(
             title: t['settings_sec_memory']!,
+            subtitle: t['settings_sec_memory_sub'],
             icon: Icons.collections_outlined,
           ),
           ListTile(
@@ -181,9 +224,29 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text(t['on_device_ocr_hint']!),
             value: ref.watch(onDeviceOcrProvider),
             onChanged: engineMode == OcrEngineMode.hybrid
-                ? (enabled) {
-                    ref.read(onDeviceOcrProvider.notifier).state = enabled;
-                    saveOnDeviceOcrEnabled(ref.read(preferencesProvider), enabled);
+                ? (enabled) async {
+                    if (!enabled) {
+                      ref.read(onDeviceOcrProvider.notifier).state = false;
+                      await saveOnDeviceOcrEnabled(ref.read(preferencesProvider), false);
+                      return;
+                    }
+                    final confirmed = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text(t['graph_ocr_confirm_title']!),
+                        content: Text(t['graph_ocr_confirm_body']!),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(t['cancel'] ?? '취소')),
+                          FilledButton(
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text(t['on_device_ocr_confirm']!),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (confirmed != true || !context.mounted) return;
+                    ref.read(onDeviceOcrProvider.notifier).state = true;
+                    await saveOnDeviceOcrEnabled(ref.read(preferencesProvider), true);
                   }
                 : null,
           ),
@@ -212,6 +275,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           SettingsSectionHeader(
             title: t['settings_sec_notify']!,
+            subtitle: t['settings_sec_notify_sub'],
             icon: Icons.notifications_active_outlined,
           ),
           const LocationPermissionTile(),
@@ -219,7 +283,11 @@ class SettingsScreen extends ConsumerWidget {
           SwitchListTile(
             secondary: const Icon(Icons.notifications_active_outlined),
             title: Text(t['proactive_recall']!),
-            subtitle: Text(t['proactive_recall_hint']!),
+            subtitle: Text(
+              ref.watch(proactiveRecallEnabledProvider)
+                  ? t['proactive_recall_while_in_use']!
+                  : t['proactive_recall_hint']!,
+            ),
             value: ref.watch(proactiveRecallEnabledProvider),
             onChanged: (enabled) async {
               ref.read(proactiveRecallEnabledProvider.notifier).state = enabled;
@@ -229,7 +297,13 @@ class SettingsScreen extends ConsumerWidget {
                 final bgOk = await LocationPermissionService.requestBackgroundLocationForRecall();
                 if (context.mounted && !bgOk) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(t['proactive_recall_bg_hint']!)),
+                    SnackBar(
+                      content: Text(t['proactive_recall_bg_hint']!),
+                      action: SnackBarAction(
+                        label: t['proactive_recall_open_settings']!,
+                        onPressed: LocationPermissionService.openAppSettings,
+                      ),
+                    ),
                   );
                 }
               } else {
@@ -278,6 +352,7 @@ class SettingsScreen extends ConsumerWidget {
           const Divider(),
           SettingsSectionHeader(
             title: t['settings_sec_graph']!,
+            subtitle: t['settings_sec_graph_sub'],
             icon: Icons.hub_outlined,
           ),
           const SettingsGraphAiStatusCard(),
@@ -334,7 +409,11 @@ class SettingsScreen extends ConsumerWidget {
             },
           ),
           const Divider(),
-          const _GraphCleanupRecommendBanner(),
+          SettingsSectionHeader(
+            title: t['settings_sec_data']!,
+            subtitle: t['settings_sec_data_sub'],
+            icon: Icons.storage_outlined,
+          ),
           ListTile(
             leading: const Icon(Icons.cleaning_services_outlined),
             title: Text(t['graph_cleanup_title']!),
@@ -353,6 +432,13 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text(t['backup_import_hint']!),
             onTap: () => _importBackup(context, ref, t),
           ),
+          if (AppEnv.isConfigured)
+            ListTile(
+              leading: const Icon(Icons.cloud_upload_outlined),
+              title: Text(t['cloud_sync_title']!),
+              subtitle: Text(t['cloud_sync_run']!),
+              onTap: () => _runCloudSync(context, ref, t),
+            ),
           ListTile(
             leading: const Icon(Icons.widgets_outlined),
             title: Text(t['home_widget']!),
@@ -361,20 +447,10 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const Divider(),
           SettingsSectionHeader(
-            title: t['settings_sec_privacy']!,
-            icon: Icons.lock_outline,
+            title: t['settings_sec_appearance']!,
+            subtitle: t['settings_sec_appearance_sub'],
+            icon: Icons.palette_outlined,
           ),
-          SwitchListTile(
-            secondary: const Icon(Icons.lock_outline),
-            title: Text(t['privacy_local_mode']!),
-            subtitle: Text(t['privacy_local_mode_hint']!),
-            value: ref.watch(privacyLocalModeProvider),
-            onChanged: (enabled) {
-              ref.read(privacyLocalModeProvider.notifier).state = enabled;
-              writePrivacyLocalMode(ref.read(preferencesProvider), enabled);
-            },
-          ),
-          const Divider(),
           ListTile(title: Text(t['theme_color']!)),
           Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Wrap(spacing: 12, children: themeColors.map((color) => GestureDetector(onTap: () async {
             ref.read(seedColorProvider.notifier).state = color;
@@ -388,14 +464,95 @@ class SettingsScreen extends ConsumerWidget {
             writeLanguageCode(ref.read(preferencesProvider), l.languageCode);
           }, items: const [DropdownMenuItem(value: Locale('ko'), child: Text("한국어")), DropdownMenuItem(value: Locale('en'), child: Text("English"))])),
           const Divider(),
-          ref.watch(packageInfoProvider).when(
-            data: (info) => ListTile(
-              leading: const Icon(Icons.info_outline),
-              title: Text(t['app_version']!),
-              subtitle: Text('${info.version} (${info.buildNumber})'),
-            ),
-            loading: () => const SizedBox.shrink(),
-            error: (_, _) => const SizedBox.shrink(),
+          SettingsSectionHeader(
+            title: t['settings_sec_lock'] ?? '기기 잠금',
+            subtitle: t['settings_sec_lock_sub'] ?? '지문·패턴으로 앱을 보호합니다',
+            icon: Icons.security_rounded,
+          ),
+          Builder(
+            builder: (context) {
+              ref.watch(appLockRevisionProvider);
+              final prefs = ref.watch(preferencesProvider);
+              return Column(
+                children: [
+                  SwitchListTile(
+                    secondary: const Icon(Icons.fingerprint_rounded),
+                    title: Text(t['app_lock_biometric'] ?? '지문 잠금'),
+                    subtitle: Text(t['app_lock_biometric_hint'] ?? '앱을 열 때 지문 인증을 요청합니다'),
+                    value: AppLockService.instance.readBiometricEnabled(prefs),
+                    onChanged: (enabled) async {
+                      final lock = AppLockService.instance;
+                      if (enabled) {
+                        final can = await lock.canCheckBiometrics();
+                        if (!can) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(t['app_lock_bio_unavailable'] ?? '이 기기에서 지문을 사용할 수 없습니다.')),
+                            );
+                          }
+                          return;
+                        }
+                        final ok = await lock.authenticateBiometric(reason: '지문 잠금을 켜려면 인증하세요');
+                        if (!ok) return;
+                      }
+                      await lock.writeBiometricEnabled(prefs, enabled);
+                      ref.read(appLockRevisionProvider.notifier).state++;
+                    },
+                  ),
+                  SwitchListTile(
+                    secondary: const Icon(Icons.grid_view_rounded),
+                    title: Text(t['app_lock_pattern'] ?? '패턴 잠금'),
+                    subtitle: Text(t['app_lock_pattern_hint'] ?? '9점 패턴으로 잠금을 해제합니다'),
+                    value: AppLockService.instance.readPatternEnabled(prefs),
+                    onChanged: (enabled) async {
+                      final lock = AppLockService.instance;
+                      if (enabled) {
+                        final has = await lock.hasPattern();
+                        if (!has) {
+                          if (!context.mounted) return;
+                          await Navigator.of(context).push(
+                            MaterialPageRoute<void>(
+                              builder: (_) => PatternLockScreen(
+                                mode: PatternLockMode.register,
+                                title: t['app_lock_pattern_register'] ?? '패턴 등록',
+                                subtitle: t['app_lock_pattern_register_sub'] ?? '잠금에 사용할 패턴을 그려 주세요',
+                                onCancel: () => Navigator.pop(context),
+                                onRegistered: () async {
+                                  await lock.writePatternEnabled(prefs, true);
+                                  ref.read(appLockRevisionProvider.notifier).state++;
+                                  if (context.mounted) Navigator.pop(context);
+                                },
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+                      } else {
+                        await lock.clearPattern();
+                      }
+                      await lock.writePatternEnabled(prefs, enabled);
+                      ref.read(appLockRevisionProvider.notifier).state++;
+                    },
+                  ),
+                ],
+              );
+            },
+          ),
+          const Divider(),
+          SettingsSectionHeader(
+            title: t['settings_sec_privacy']!,
+            subtitle: t['settings_sec_privacy_sub'],
+            icon: Icons.lock_outline,
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.lock_outline),
+            title: Text(t['privacy_local_mode']!),
+            subtitle: Text(t['privacy_local_mode_hint']!),
+            value: ref.watch(privacyLocalModeProvider),
+            onChanged: (enabled) {
+              ref.read(privacyLocalModeProvider.notifier).state = enabled;
+              writePrivacyLocalMode(ref.read(preferencesProvider), enabled);
+            },
           ),
           ListTile(
             leading: const Icon(Icons.privacy_tip_outlined),
@@ -424,13 +581,6 @@ class SettingsScreen extends ConsumerWidget {
               subtitle: Text(t['account_delete_hint']!),
               onTap: () => _confirmAccountDeletion(context, ref, t),
             ),
-          if (AppEnv.isConfigured)
-            ListTile(
-              leading: const Icon(Icons.cloud_upload_outlined),
-              title: Text(t['cloud_sync_title']!),
-              subtitle: Text(t['cloud_sync_run']!),
-              onTap: () => _runCloudSync(context, ref, t),
-            ),
           ListTile(
             leading: const Icon(Icons.logout),
             title: Text(t['logout']!),
@@ -438,11 +588,11 @@ class SettingsScreen extends ConsumerWidget {
               final prefs = ref.read(preferencesProvider);
               await writeGuestMode(prefs, false);
               ref.read(guestModeProvider.notifier).state = false;
-              if (AppEnv.isConfigured) {
-                await Supabase.instance.client.auth.signOut();
-              }
+              await FirebaseEmailAuthService.instance.signOut();
             },
           ),
+          const Divider(),
+          const _AppVersionTile(),
         ],
       ),
     );
@@ -526,11 +676,39 @@ class SettingsScreen extends ConsumerWidget {
     }
   }
 
-  void _openUrl(BuildContext context, String url) async {
-    final uri = Uri.tryParse(url);
-    if (uri != null && await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+  Future<void> _openUserGuideWeb(BuildContext context, Map<String, String> t) async {
+    final uri = Uri.tryParse(AppUrls.userGuide);
+    if (uri == null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t['user_guide_open_failed']!)),
+        );
+      }
+      return;
     }
+    try {
+      final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+      if (!ok && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t['user_guide_open_failed']!)),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t['user_guide_open_failed']!)),
+        );
+      }
+    }
+  }
+
+  void _openUserGuidePdf(BuildContext context, Map<String, String> t) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UserGuidePdfScreen(title: t['user_guide_title']!),
+      ),
+    );
   }
 
   Future<void> _confirmAccountDeletion(
@@ -626,15 +804,10 @@ class SettingsScreen extends ConsumerWidget {
                     child: OutlinedButton.icon(
                       onPressed: () {
                         Navigator.pop(context);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => UserGuidePdfScreen(title: t['user_guide_title']!),
-                          ),
-                        );
+                        _openUserGuidePdf(context, t);
                       },
                       icon: const Icon(Icons.picture_as_pdf_outlined, size: 20),
-                      label: Text(t['user_guide_open_pdf'] ?? 'PDF 가이드'),
+                      label: Text(t['user_guide_open_pdf']!),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -646,13 +819,10 @@ class SettingsScreen extends ConsumerWidget {
                     child: OutlinedButton.icon(
                       onPressed: () async {
                         Navigator.pop(context);
-                        final uri = Uri.tryParse(AppUrls.userGuide);
-                        if (uri != null && await canLaunchUrl(uri)) {
-                          await launchUrl(uri, mode: LaunchMode.externalApplication);
-                        }
+                        await _openUserGuideWeb(context, t);
                       },
                       icon: const Icon(Icons.language_outlined, size: 20),
-                      label: Text(t['user_guide_open_web'] ?? '웹 안내'),
+                      label: Text(t['user_guide_open_web']!),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 12),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -839,50 +1009,29 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-/// 정리 미리보기에 항목이 있으면 관계망 데이터 정리를 권장합니다.
-class _GraphCleanupRecommendBanner extends ConsumerStatefulWidget {
-  const _GraphCleanupRecommendBanner();
+/// 앱 버전 타일 — 로딩 중에도 높이를 유지해 스크롤 중 레이아웃 점프를 막습니다.
+class _AppVersionTile extends ConsumerWidget {
+  const _AppVersionTile();
+
+  static const double _tileHeight = 72;
 
   @override
-  ConsumerState<_GraphCleanupRecommendBanner> createState() => _GraphCleanupRecommendBannerState();
-}
-
-class _GraphCleanupRecommendBannerState extends ConsumerState<_GraphCleanupRecommendBanner> {
-  GraphCleanupReport? _preview;
-
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(_loadPreview);
-  }
-
-  Future<void> _loadPreview() async {
-    final preview = await previewGraphDataCleanup(ref);
-    if (!mounted) return;
-    if (preview.isEmpty) return;
-    setState(() => _preview = preview);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final preview = _preview;
-    if (preview == null || preview.isEmpty) return const SizedBox.shrink();
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(translationsProvider);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      child: MaterialBanner(
-        backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-        content: Text(
-          t['graph_cleanup_recommend']!.replaceAll('{total}', '${preview.total}'),
-        ),
-        leading: Icon(Icons.auto_fix_high, color: Theme.of(context).colorScheme.onSecondaryContainer),
-        actions: [
-          TextButton(
-            onPressed: () => setState(() => _preview = null),
-            child: Text(t['got_it']!),
-          ),
-        ],
+    return ref.watch(packageInfoProvider).when(
+      data: (info) => ListTile(
+        leading: const Icon(Icons.info_outline),
+        title: Text(t['app_version']!),
+        subtitle: Text('${info.version} (${info.buildNumber})'),
       ),
+      loading: () => SizedBox(
+        height: _tileHeight,
+        child: ListTile(
+          leading: const Icon(Icons.info_outline),
+          title: Text(t['app_version']!),
+        ),
+      ),
+      error: (_, _) => const SizedBox(height: _tileHeight),
     );
   }
 }

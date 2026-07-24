@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/app_theme.dart';
+import '../../core/graph_display_mode.dart';
 import '../../core/graph_hub_config.dart';
+import '../../core/graph_view_lens.dart';
 import '../../core/graph_scale_config.dart';
 import '../../core/prefs.dart';
 import '../../services/graph_achievements_service.dart';
@@ -24,11 +26,22 @@ import '../../utils/memory_video_paths.dart';
 import '../../utils/semantic_search.dart';
 import '../../utils/graph_keyword_focus.dart';
 import '../../utils/graph_time_filter.dart';
+import '../../utils/graph_viewport.dart';
+import '../../utils/graph_context_lens.dart';
+import '../../utils/graph_viewport_cull.dart';
 import '../../utils/memory_content_edit.dart';
 import '../../widgets/person_node_avatar.dart';
+import '../../widgets/app_empty_state.dart';
 import 'graph_chat_save.dart';
+import 'graph_context_lens_bar.dart';
+import 'graph_pro_value_banner.dart';
 import 'graph_event_layout.dart';
 import 'graph_help_sheet.dart';
+import 'graph_trust_sheet.dart';
+import 'graph_lens_mode_bar.dart';
+import 'graph_list_view.dart';
+import 'graph_person_detail_sheet.dart';
+import 'graph_person_layout.dart';
 import 'graph_layout.dart';
 import 'graph_onboarding.dart';
 import 'graph_node_ai_sheet.dart';
@@ -54,6 +67,8 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
   bool _moved = false;
   Map<String, GraphSatelliteExpandMode> _satelliteExpansions = {};
   final Set<String> _collapsedSatelliteMemoryIds = {};
+  final Set<String> _collapsedClusterIds = {};
+  String? _clusterCollapseFingerprint;
   ProviderSubscription<List<Memory>>? _achievementSub;
   ProviderSubscription<List<Memory>>? _memoryLayoutSub;
   ProviderSubscription<int>? _graphTabSub;
@@ -66,6 +81,8 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
   MemoryFocusGraphResult? _cachedMemoryFocusResult;
   Map<String, Offset> _focusDragPositions = {};
   String? _focusDragScope;
+  bool _pendingLayoutInvalidation = false;
+  String? _lastFitFingerprint;
 
   @override
   void initState() {
@@ -83,6 +100,17 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     _graphTabSub = ref.listenManual<int>(mainNavigationTabProvider, (prev, next) {
       if (next == 2 && mounted) {
         showGraphOnboardingIfNeeded(context, ref);
+        if (_pendingLayoutInvalidation) {
+          _pendingLayoutInvalidation = false;
+          setState(() {
+            _layoutFingerprint = null;
+            _cachedLayout = null;
+            _cachedCanvasSize = null;
+            _cachedDefaults = null;
+            _cachedFocusResult = null;
+            _cachedMemoryFocusResult = null;
+          });
+        }
       }
     });
     _achievementSub = ref.listenManual<List<Memory>>(memoryListProvider, (_, _) => _checkAchievements());
@@ -91,6 +119,10 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       if (_lastMemoryLayoutSignature == sig) return;
       _lastMemoryLayoutSignature = sig;
       if (!mounted) return;
+      if (ref.read(mainNavigationTabProvider) != 2) {
+        _pendingLayoutInvalidation = true;
+        return;
+      }
       setState(() {
         _layoutFingerprint = null;
         _cachedLayout = null;
@@ -241,6 +273,118 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     });
   }
 
+  void _onContextLensChanged(WidgetRef ref, GraphContextLens lens, List<Memory> memories) {
+    applyGraphContextLens(ref, lens);
+    if (!mounted) return;
+    setState(() {
+      _layoutFingerprint = null;
+      _cachedLayout = null;
+      _cachedCanvasSize = null;
+      _cachedDefaults = null;
+    });
+    _collapseAllSatellites(memories);
+  }
+
+  GraphViewLens _effectiveViewLens(GraphViewLens lens) {
+    // AI 렌즈는 설정「관계망 AI」토글로 대체 — 저장된 ai는 기억 렌즈로 매핑.
+    if (lens == GraphViewLens.timeline || lens == GraphViewLens.aiInsight) {
+      return GraphViewLens.memory;
+    }
+    return lens;
+  }
+
+  void _onGraphViewLensChanged(WidgetRef ref, GraphViewLens lens, List<Memory> memories) {
+    final effective = _effectiveViewLens(lens);
+    ref.read(graphViewLensProvider.notifier).state = effective;
+    writeGraphViewLens(ref.read(preferencesProvider), effective);
+    setState(() {
+      _layoutFingerprint = null;
+      _cachedLayout = null;
+      _lastFitFingerprint = null;
+    });
+    _collapseAllSatellites(memories);
+  }
+
+  void _onGraphTimeRangeChanged(WidgetRef ref, GraphTimeRange range, List<Memory> memories) {
+    ref.read(graphTimeRangeProvider.notifier).state = range;
+    writeGraphTimeRange(ref.read(preferencesProvider), range);
+    _collapseAllSatellites(memories);
+  }
+
+  void _setGraphDisplayMode(GraphDisplayMode mode) {
+    ref.read(graphDisplayModeProvider.notifier).state = mode;
+    writeGraphDisplayMode(ref.read(preferencesProvider), mode);
+  }
+
+  bool _isClusterHubNode(GraphNodeData node) {
+    if (node.id == 'person_hub_self') return true;
+    if (node.id.startsWith('person_overview_')) return true;
+    if (node.kind == GraphNodeKind.eventHub && (node.hubDepth == null || node.hubDepth == 0)) return true;
+    if (node.kind == GraphNodeKind.memory) return true;
+    return false;
+  }
+
+  void _seedClusterCollapseIfNeeded(GraphLayout layout, String fingerprint) {
+    if (_clusterCollapseFingerprint == fingerprint) return;
+    _clusterCollapseFingerprint = fingerprint;
+    _collapsedClusterIds.clear();
+    if (layout.nodes.length < GraphScaleConfig.autoCollapseClusterNodeThreshold) return;
+    for (final node in layout.nodes) {
+      if (node.layoutClusterId.isNotEmpty) _collapsedClusterIds.add(node.layoutClusterId);
+    }
+  }
+
+  GraphLayout _applyCollapsedClusters(GraphLayout layout) {
+    if (_collapsedClusterIds.isEmpty) return layout;
+    final nodes = layout.nodes.where((n) {
+      if (!_collapsedClusterIds.contains(n.layoutClusterId)) return true;
+      return _isClusterHubNode(n);
+    }).toList();
+    final ids = nodes.map((n) => n.id).toSet();
+    final edges = layout.edges.where((e) => ids.contains(e.fromId) && ids.contains(e.toId)).toList();
+    return GraphLayout(nodes: nodes, edges: edges);
+  }
+
+  Widget _buildGraphLensModeBar({
+    required Map<String, String> t,
+    required GraphViewLens viewLens,
+    required GraphTimeRange timeRange,
+    required int totalMemoryCount,
+    required int visibleCount,
+    required List<Memory> collapseMemories,
+    List<GraphInsight> insights = const [],
+    GraphDisplayMode? displayMode,
+  }) {
+    return GraphLensModeBar(
+      lens: viewLens,
+      timeRange: timeRange,
+      personLabel: t['graph_lens_person']!,
+      memoryLabel: t['graph_lens_memory']!,
+      viewTitle: t['graph_view_title']!,
+      range7dLabel: t['graph_range_7d']!,
+      range30dLabel: t['graph_range_30d']!,
+      range90dLabel: t['graph_range_90d']!,
+      rangeAllLabel: t['graph_range_all']!,
+      helpTooltip: t['graph_help_title']!,
+      onHelpPressed: () => showGraphHelpSheet(
+        context,
+        t: t,
+        timeRange: timeRange,
+        totalCount: totalMemoryCount,
+        visibleCount: visibleCount,
+        insights: insights,
+      ),
+      onLensChanged: (lens) => _onGraphViewLensChanged(ref, lens, collapseMemories),
+      onTimeRangeChanged: (range) => _onGraphTimeRangeChanged(ref, range, collapseMemories),
+      displayMode: displayMode,
+      onDisplayModeChanged: displayMode == null
+          ? null
+          : (mode) => setState(() => _setGraphDisplayMode(mode)),
+      graphModeTooltip: t['graph_view_mode_graph'],
+      listModeTooltip: t['graph_view_mode_list'],
+    );
+  }
+
   String? _nodeAt(Offset canvasPos, List<GraphNodeData> nodes, Map<String, Offset> positions) {
     final sorted = [...nodes]
       ..sort((a, b) {
@@ -379,6 +523,47 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
           break;
         }
       }
+      if (tappedNode != null) {
+        final cid = tappedNode.layoutClusterId;
+        if (_collapsedClusterIds.contains(cid) && _isClusterHubNode(tappedNode)) {
+          GraphSatelliteExpandMode? railMode;
+          if (nodeId.startsWith('memory_')) {
+            final badge = tappedNode.satelliteBadge;
+            final center = positions[nodeId];
+            final canvasPos = _lastCanvasPosition;
+            if (badge != null &&
+                badge.isNotEmpty &&
+                center != null &&
+                canvasPos != null) {
+              railMode = satelliteModeFromRailTap(
+                canvasPos: canvasPos,
+                nodeCenter: center,
+                nodeSize: tappedNode.size,
+                badgeText: badge,
+                localeCode: localeCode,
+              );
+            }
+          }
+          setState(() {
+            _collapsedClusterIds.remove(cid);
+            _layoutFingerprint = null;
+            _cachedLayout = null;
+          });
+          // 접힌 클러스터에서 왼쪽 레일을 누르면 묶음 해제 + 위성도 함께 펼침.
+          if (railMode != null && nodeId.startsWith('memory_')) {
+            _toggleSatelliteExpansion(
+              nodeId.replaceFirst('memory_', ''),
+              railMode,
+              memories: memories,
+              fragments: fragments,
+              localeCode: localeCode,
+            );
+          }
+          _finishDrag(ref);
+          _resetPointerState();
+          return;
+        }
+      }
       if (nodeId.startsWith('memory_')) {
         final memoryId = nodeId.replaceFirst('memory_', '');
         final badge = tappedNode?.satelliteBadge;
@@ -432,8 +617,9 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
         }
       } else if (tappedNode != null && mounted) {
         final kind = tappedNode.kind;
-        if (kind == GraphNodeKind.person ||
-            kind == GraphNodeKind.place ||
+        if (kind == GraphNodeKind.person) {
+          showGraphPersonDetailSheet(context, ref, personName: tappedNode.title);
+        } else if (kind == GraphNodeKind.place ||
             kind == GraphNodeKind.activity) {
           showGraphEntityMediaSheet(
             context,
@@ -471,7 +657,16 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     final isDark = theme.brightness == Brightness.dark;
 
     if (memories.isEmpty) {
-      return Center(child: Text(t['no_graph']!));
+      return AppEmptyState(
+        icon: Icons.hub_outlined,
+        title: t['no_graph']!,
+        subtitle: t['empty_hint'],
+      );
+    }
+
+    final graphTabActive = ref.watch(mainNavigationTabProvider) == 2;
+    if (!graphTabActive) {
+      return const SizedBox.shrink();
     }
 
     final focusMemoryId = ref.watch(graphFocusMemoryIdProvider);
@@ -487,15 +682,21 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       _focusDragScope = focusScope;
       _focusDragPositions = {};
     }
-    final graphTabActive = ref.watch(mainNavigationTabProvider) == 2;
     final graphSearchQuery = ref.watch(graphEntitySearchProvider).trim().toLowerCase();
     final landscapeImmersive =
         graphTabActive && MediaQuery.orientationOf(context) == Orientation.landscape;
     final timeRange = ref.watch(graphTimeRangeProvider);
+    final contextLens = ref.watch(graphContextLensProvider);
+    final viewLens = ref.watch(graphViewLensProvider);
+    final effectiveViewLens = _effectiveViewLens(viewLens);
+    final localeCode = ref.watch(languageProvider).languageCode;
     final totalMemoryCount = memories.length;
-    final visibleMemories = isFocusMode
+    final rangeMemories = isFocusMode
         ? memories
         : filterMemoriesForGraphRange(memories, timeRange);
+    final visibleMemories = (!isFocusMode && contextLens != GraphContextLens.all)
+        ? filterMemoriesForGraphLens(rangeMemories, contextLens, localeCode)
+        : rangeMemories;
     var layoutMemories = visibleMemories;
     var layoutCapApplied = false;
     if (!isFocusMode && layoutMemories.length > GraphScaleConfig.maxLayoutMemories) {
@@ -507,28 +708,78 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
         totalMemoryCount >= GraphScaleConfig.performanceBannerThreshold &&
         timeRange == GraphTimeRange.all;
 
+    if (!isFocusMode && rangeMemories.isEmpty) {
+      return Column(
+        children: [
+          GraphContextLensBar(
+            lens: contextLens,
+            visibleCount: 0,
+            rangeCount: 0,
+            onLensChanged: (lens) => _onContextLensChanged(ref, lens, memories),
+          ),
+          _buildGraphLensModeBar(
+            t: t,
+            viewLens: viewLens,
+            timeRange: timeRange,
+            totalMemoryCount: totalMemoryCount,
+            visibleCount: 0,
+            collapseMemories: memories,
+          ),
+          Expanded(
+            child: AppEmptyState(
+              icon: Icons.date_range_outlined,
+              title: t['graph_range_empty']!,
+            ),
+          ),
+          if (!landscapeImmersive) _GraphTrustHintBar(graphAiOn: false),
+        ],
+      );
+    }
+
     if (!isFocusMode && visibleMemories.isEmpty) {
       return Column(
         children: [
-          _GraphTimeRangeBar(
-            timeRange: timeRange,
-            totalCount: totalMemoryCount,
+          GraphContextLensBar(
+            lens: contextLens,
             visibleCount: 0,
-            onRangeChanged: (range) {
-              ref.read(graphTimeRangeProvider.notifier).state = range;
-              writeGraphTimeRange(ref.read(preferencesProvider), range);
-            },
+            rangeCount: rangeMemories.length,
+            onLensChanged: (lens) => _onContextLensChanged(ref, lens, memories),
+          ),
+          if (!landscapeImmersive && effectiveViewLens != GraphViewLens.person)
+            _GraphHubModeBar(
+              mode: ref.watch(graphHubViewModeProvider),
+              memoryHubLabel: t['graph_hub_memory']!,
+              eventHubLabel: t['graph_hub_event']!,
+              onModeChanged: (mode) {
+                ref.read(graphHubViewModeProvider.notifier).state = mode;
+                writeGraphHubViewMode(ref.read(preferencesProvider), mode);
+              },
+            ),
+          _buildGraphLensModeBar(
+            t: t,
+            viewLens: viewLens,
+            timeRange: timeRange,
+            totalMemoryCount: totalMemoryCount,
+            visibleCount: 0,
+            collapseMemories: memories,
           ),
           Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(32),
-                child: Text(
-                  t['graph_range_empty']!,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: theme.colorScheme.onSurfaceVariant, height: 1.5),
+            child: Column(
+              children: [
+                Expanded(
+                  child: AppEmptyState(
+                    icon: Icons.filter_alt_outlined,
+                    title: t['graph_lens_empty']!,
+                  ),
                 ),
-              ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                  child: FilledButton.tonal(
+                    onPressed: () => _onContextLensChanged(ref, GraphContextLens.all, memories),
+                    child: Text(t['graph_lens_show_all']!),
+                  ),
+                ),
+              ],
             ),
           ),
           if (!landscapeImmersive) _GraphTrustHintBar(graphAiOn: false),
@@ -548,14 +799,13 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       ),
       subscription: ref.watch(subscriptionStatusProvider),
     );
-    final localeCode = ref.watch(languageProvider).languageCode;
     final hubViewMode = ref.watch(graphHubViewModeProvider);
     final Map<String, GraphMemoryFragment> fragments =
         graphAiOn ? ref.watch(memoryGraphFragmentsProvider) : const {};
     final placeCache = ref.watch(memoryPlaceNamesProvider);
     final fullAddressCache = ref.watch(memoryPlaceFullAddressesProvider);
 
-    late final GraphLayout layout;
+    late GraphLayout layout;
     late final Size canvasSize;
     late final Map<String, Offset> defaults;
     KeywordFocusGraphResult? focusResult;
@@ -578,7 +828,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
         ? 'memfocus:${focusMemoryId!.trim()}:$memoryKey:$localeCode:$fragmentKey'
         : isKeywordFocusMode
             ? 'focus:$keyword:$memoryKey:$localeCode'
-            : 'full:$memoryKey:$expansionKey:$collapseKey:$localeCode:$graphAiOn:${hubViewMode.name}:$fragmentKey';
+            : 'full:$memoryKey:$expansionKey:$collapseKey:$localeCode:$graphAiOn:${hubViewMode.name}:${effectiveViewLens.name}:$fragmentKey';
 
     if (_layoutFingerprint == fingerprint &&
         _cachedLayout != null &&
@@ -643,13 +893,24 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
         localeCode: localeCode,
       );
       layout = focusResult.layout;
-      canvasSize = keywordFocusCanvasSize(focusResult.shownCount);
+      canvasSize = keywordFocusCanvasSize(layout.nodes.length);
       defaults = initialKeywordFocusPositions(layout.nodes, canvasSize);
       _layoutFingerprint = fingerprint;
       _cachedLayout = layout;
       _cachedCanvasSize = canvasSize;
       _cachedDefaults = defaults;
       _cachedFocusResult = focusResult;
+      _cachedMemoryFocusResult = null;
+    } else if (effectiveViewLens == GraphViewLens.person) {
+      final personResult = buildPersonOverviewGraphLayout(layoutMemories, localeCode: localeCode);
+      layout = personResult.layout;
+      canvasSize = personOverviewCanvasSize(layout.nodes.length);
+      defaults = initialPersonOverviewPositions(layout.nodes, canvasSize);
+      _layoutFingerprint = fingerprint;
+      _cachedLayout = layout;
+      _cachedCanvasSize = canvasSize;
+      _cachedDefaults = defaults;
+      _cachedFocusResult = null;
       _cachedMemoryFocusResult = null;
     } else if (hubViewMode == GraphHubViewMode.eventHub) {
       layout = buildEventGraphLayout(
@@ -698,8 +959,11 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(t['graph_focus_empty']!, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
+              AppEmptyState(
+                icon: Icons.center_focus_weak_rounded,
+                title: t['graph_focus_empty']!,
+              ),
+              const SizedBox(height: 8),
               FilledButton.tonal(
                 onPressed: () => clearGraphFocus(ref),
                 child: Text(t['graph_focus_show_all']!),
@@ -710,6 +974,12 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       );
     }
 
+    if (!isFocusMode) {
+      _seedClusterCollapseIfNeeded(layout, fingerprint);
+      layout = _applyCollapsedClusters(layout);
+    }
+
+    final displayMode = ref.watch(graphDisplayModeProvider);
     final nodeMap = {for (final node in layout.nodes) node.id: node};
     final basePositions = <String, Offset>{};
     final center = Offset(canvasSize.width / 2, canvasSize.height / 2);
@@ -718,7 +988,6 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
           ? (_focusDragPositions[node.id] ?? defaults[node.id] ?? center)
           : (storedPositions[node.id] ?? defaults[node.id] ?? center);
     }
-    final positions = _livePositions ?? basePositions;
 
     int paintOrder(GraphNodeData node) {
       if (node.isMemory) return 0;
@@ -730,7 +999,21 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
 
     final sortedNodes = [...layout.nodes]..sort((a, b) => paintOrder(a).compareTo(paintOrder(b)));
 
+    var positions = Map<String, Offset>.from(_livePositions ?? basePositions);
+    var effectiveCanvas = canvasSize;
+    final contentBounds = graphContentBounds(sortedNodes, positions);
+    effectiveCanvas = expandCanvasForContent(effectiveCanvas, contentBounds);
+    positions = shiftPositionsIntoCanvas(positions, contentBounds, effectiveCanvas);
+
     final memoryById = {for (final m in visibleMemories) m.id: m};
+    final nodeMediaIndex = buildGraphNodeMediaIndex(
+      nodes: layout.nodes,
+      memories: visibleMemories,
+      imagePaths: imagePaths,
+      videoPaths: videoPaths,
+      edges: layout.edges,
+      localeCode: localeCode,
+    );
     final insights = generateGraphInsights(
       memories: layoutMemories,
       fragments: fragments,
@@ -748,30 +1031,61 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
               _handlePointerEnd(event, ref, visibleMemories, imagePaths, videoPaths, layout.nodes, layout.edges, positions),
           onPointerCancel: (event) =>
               _handlePointerEnd(event, ref, visibleMemories, imagePaths, videoPaths, layout.nodes, layout.edges, positions),
-          child: InteractiveViewer(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+              final cullNodes = !isFocusMode && sortedNodes.length > 24;
+              if (_lastFitFingerprint != fingerprint) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  fitGraphToViewport(
+                    controller: _transformController,
+                    contentBounds: graphContentBounds(sortedNodes, positions),
+                    viewportSize: viewportSize,
+                  );
+                  _lastFitFingerprint = fingerprint;
+                });
+              }
+              return InteractiveViewer(
             transformationController: _transformController,
             constrained: false,
-            boundaryMargin: const EdgeInsets.all(1000),
-            minScale: 0.01,
+            boundaryMargin: const EdgeInsets.all(double.infinity),
+            minScale: 0.02,
             maxScale: 5.0,
             panEnabled: !_draggingNode,
             scaleEnabled: !_draggingNode,
-            child: SizedBox(
-              width: canvasSize.width,
-              height: canvasSize.height,
-              child: Stack(
+            child: RepaintBoundary(
+              child: SizedBox(
+              width: effectiveCanvas.width,
+              height: effectiveCanvas.height,
+              child: ValueListenableBuilder<Matrix4>(
+                valueListenable: _transformController,
+                builder: (context, matrix, _) {
+                  final visibleIds = cullNodes
+                      ? visibleGraphNodeIds(
+                          nodes: sortedNodes,
+                          positions: positions,
+                          transform: matrix,
+                          viewportSize: viewportSize,
+                        )
+                      : null;
+                  final nodesToRender = cullNodes
+                      ? sortedNodes.where((n) => visibleIds!.contains(n.id))
+                      : sortedNodes;
+                  return Stack(
                 clipBehavior: Clip.none,
                 children: [
                   CustomPaint(
-                    size: canvasSize,
+                    size: effectiveCanvas,
                     painter: GraphEdgesPainter(
                       edges: layout.edges,
                       positions: positions,
                       nodeMap: nodeMap,
                       isDark: isDark,
+                      visibleNodeIds: visibleIds,
                     ),
                   ),
-                  ...sortedNodes.map((node) {
+                  ...nodesToRender.map((node) {
                     final position = positions[node.id]!;
                     final entityName = node.isMemory ? null : node.title;
                     final linkedMemory = node.id.startsWith('memory_')
@@ -793,22 +1107,10 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
                     final isSelected = selectedNodeId == node.id;
                     final isDragging = _draggingNode && _dragGroup.contains(node.id);
 
-                    final thumbPath = primaryMediaThumbForGraphNode(
-                      node: node,
-                      memories: visibleMemories,
-                      imagePaths: imagePaths,
-                      videoPaths: videoPaths,
-                    );
-                    final photoCount = photoCountForGraphNode(
-                      node: node,
-                      memories: visibleMemories,
-                      imagePaths: imagePaths,
-                    );
-                    final showVideoBadge = graphNodeHasVideo(
-                      node: node,
-                      memories: visibleMemories,
-                      videoPaths: videoPaths,
-                    );
+                    final media = nodeMediaIndex[node.id] ?? GraphNodeMediaInfo.empty;
+                    final thumbPath = media.thumbnailPath;
+                    final photoCount = media.photoCount;
+                    final showVideoBadge = media.hasVideo;
 
                     final memoryId = node.id.startsWith('memory_') ? node.id.replaceFirst('memory_', '') : null;
                     final satellitesExpanded =
@@ -842,8 +1144,13 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
                     );
                   }),
                 ],
+              );
+                },
               ),
             ),
+            ),
+          );
+            },
           ),
         ),
         if (!landscapeImmersive && !isFocusMode && _satelliteExpansions.isNotEmpty)
@@ -862,6 +1169,46 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     return Column(
       children: [
         if (!landscapeImmersive && !isFocusMode)
+          const GraphProValueBanner(),
+        if (!landscapeImmersive && !isFocusMode)
+          GraphContextLensBar(
+            lens: contextLens,
+            visibleCount: layoutMemories.length,
+            rangeCount: rangeMemories.length,
+            onLensChanged: (lens) => _onContextLensChanged(ref, lens, memories),
+          ),
+        if (!landscapeImmersive && !isFocusMode)
+          _buildGraphLensModeBar(
+            t: t,
+            viewLens: viewLens,
+            timeRange: timeRange,
+            totalMemoryCount: totalMemoryCount,
+            visibleCount: layoutMemories.length,
+            collapseMemories: layoutMemories,
+            insights: insights,
+            displayMode: displayMode,
+          ),
+        if (!landscapeImmersive &&
+            !isFocusMode &&
+            effectiveViewLens == GraphViewLens.memory &&
+            ref.watch(graphAiEnabledProvider))
+          GraphAiHubToolbar(
+            insights: insights.map((i) => i.message).toList(),
+            emptyHint: t['graph_ai_insight_empty']!,
+            mode: hubViewMode,
+            memoryHubLabel: t['graph_hub_memory']!,
+            eventHubLabel: t['graph_hub_event']!,
+            onModeChanged: (mode) {
+              ref.read(graphHubViewModeProvider.notifier).state = mode;
+              writeGraphHubViewMode(ref.read(preferencesProvider), mode);
+              setState(() {
+                _layoutFingerprint = null;
+                _cachedLayout = null;
+              });
+              _collapseAllSatellites(visibleMemories);
+            },
+          )
+        else if (!landscapeImmersive && !isFocusMode && effectiveViewLens == GraphViewLens.memory)
           _GraphHubModeBar(
             mode: hubViewMode,
             memoryHubLabel: t['graph_hub_memory']!,
@@ -884,20 +1231,12 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
               writeGraphTimeRange(ref.read(preferencesProvider), range);
               _collapseAllSatellites(layoutMemories);
             },
+            onOpenList: () => setState(() => _setGraphDisplayMode(GraphDisplayMode.list)),
           ),
         if (!landscapeImmersive && !isFocusMode && layoutCapApplied)
-          _GraphLayoutCapBanner(cap: GraphScaleConfig.maxLayoutMemories),
-        if (!landscapeImmersive && !isFocusMode)
-          _GraphTimeRangeBar(
-            timeRange: timeRange,
-            totalCount: totalMemoryCount,
-            visibleCount: layoutMemories.length,
-            insights: insights,
-            onRangeChanged: (range) {
-              ref.read(graphTimeRangeProvider.notifier).state = range;
-              writeGraphTimeRange(ref.read(preferencesProvider), range);
-              _collapseAllSatellites(visibleMemories);
-            },
+          _GraphLayoutCapBanner(
+            cap: GraphScaleConfig.maxLayoutMemories,
+            onOpenList: () => setState(() => _setGraphDisplayMode(GraphDisplayMode.list)),
           ),
         if (!landscapeImmersive && isMemoryFocusMode && memoryFocusResult != null)
           Material(
@@ -973,21 +1312,30 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
             ),
           ),
         Expanded(
-          child: landscapeImmersive
-              ? SafeArea(top: false, bottom: false, child: graphCanvas)
-              : Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    graphCanvas,
-                    if (!isFocusMode)
-                      _GraphDraggableSearchFab(
-                        hint: t['graph_entity_search_hint']!,
-                        query: ref.watch(graphEntitySearchProvider),
-                        onChanged: (v) => ref.read(graphEntitySearchProvider.notifier).state = v,
-                        onClear: () => ref.read(graphEntitySearchProvider.notifier).state = '',
-                      ),
-                  ],
-                ),
+          child: displayMode == GraphDisplayMode.list && !isFocusMode
+              ? GraphListView(
+                  memories: layoutMemories,
+                  localeCode: localeCode,
+                  peopleLabel: t['graph_list_people']!,
+                  placesLabel: t['graph_list_places']!,
+                  memoriesLabel: t['graph_list_memories']!,
+                  emptyLabel: t['graph_list_empty']!,
+                )
+              : landscapeImmersive
+                  ? SafeArea(top: false, bottom: false, child: graphCanvas)
+                  : Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        graphCanvas,
+                        if (!isFocusMode)
+                          _GraphDraggableSearchFab(
+                            hint: t['graph_entity_search_hint']!,
+                            query: ref.watch(graphEntitySearchProvider),
+                            onChanged: (v) => ref.read(graphEntitySearchProvider.notifier).state = v,
+                            onClear: () => ref.read(graphEntitySearchProvider.notifier).state = '',
+                          ),
+                      ],
+                    ),
         ),
         if (!landscapeImmersive) _GraphTrustHintBar(graphAiOn: graphAiOn),
       ],
@@ -1276,85 +1624,6 @@ class _HubModeTile extends StatelessWidget {
   }
 }
 
-class _GraphTimeRangeBar extends ConsumerWidget {
-  const _GraphTimeRangeBar({
-    required this.timeRange,
-    required this.totalCount,
-    required this.visibleCount,
-    required this.onRangeChanged,
-    this.insights = const [],
-  });
-
-  final GraphTimeRange timeRange;
-  final int totalCount;
-  final int visibleCount;
-  final ValueChanged<GraphTimeRange> onRangeChanged;
-  final List<GraphInsight> insights;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final t = ref.watch(translationsProvider);
-    final theme = Theme.of(context);
-
-    String labelFor(GraphTimeRange r) => switch (r) {
-          GraphTimeRange.days7 => t['graph_range_7d']!,
-          GraphTimeRange.days30 => t['graph_range_30d']!,
-          GraphTimeRange.days90 => t['graph_range_90d']!,
-          GraphTimeRange.all => t['graph_range_all']!,
-        };
-
-    return Material(
-      color: theme.colorScheme.surfaceContainerHighest,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(0, 2, 4, 2),
-        child: Row(
-          children: [
-            IconButton(
-              icon: const Icon(Icons.info_outline_rounded, size: 22),
-              tooltip: t['graph_help_title']!,
-              visualDensity: VisualDensity.compact,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-              onPressed: () => showGraphHelpSheet(
-                context,
-                t: t,
-                timeRange: timeRange,
-                totalCount: totalCount,
-                visibleCount: visibleCount,
-                insights: insights,
-              ),
-            ),
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                clipBehavior: Clip.none,
-                physics: const BouncingScrollPhysics(),
-                child: Row(
-                  children: GraphTimeRange.values.map((range) {
-                    final selected = range == timeRange;
-                    return Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: FilterChip(
-                        label: Text(labelFor(range), style: const TextStyle(fontSize: 13)),
-                        selected: selected,
-                        onSelected: (_) => onRangeChanged(range),
-                        visualDensity: VisualDensity.compact,
-                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                      ),
-                    );
-                  }).toList(),
-                ),
-              ),
-            ),
-            const SizedBox(width: 4),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 /// 기억 허브 왼쪽 위성 레일 — 탭 영역이 넓고 내용과 겹치지 않습니다.
 class _GraphSatelliteRail extends StatelessWidget {
   const _GraphSatelliteRail({
@@ -1474,25 +1743,46 @@ class _GraphNodeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final accent = isHighlighted ? Colors.amber : node.color;
     final borderColor = isSelected || isDragging ? Colors.white : accent.withValues(alpha: 0.85);
-    final hasThumb = thumbnailPath != null && File(thumbnailPath!).existsSync();
+    final hasThumb = thumbnailPath != null;
+
+    final decoration = BoxDecoration(
+      borderRadius: BorderRadius.circular(node.isMemory ? 22 : 18),
+      border: Border.all(color: borderColor, width: 1.0),
+      boxShadow: isHighlighted || isDragging
+          ? [
+              BoxShadow(
+                color: accent.withValues(alpha: isDark ? 0.35 : 0.25),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ]
+          : null,
+    );
 
     return IgnorePointer(
-      child: AnimatedContainer(
-        duration: isDragging ? Duration.zero : const Duration(milliseconds: 180),
+      child: isDragging
+          ? Container(
+              width: node.size.width,
+              height: node.size.height,
+              clipBehavior: Clip.antiAlias,
+              decoration: decoration,
+              child: _buildNodeBody(context, hasThumb: hasThumb, accent: accent),
+            )
+          : AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
         width: node.size.width,
         height: node.size.height,
         clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(node.isMemory ? 22 : 18),
-          border: Border.all(color: borderColor, width: 1.0),
-          boxShadow: [
-            BoxShadow(color: accent.withValues(alpha: isDark ? 0.35 : 0.25), blurRadius: isHighlighted || isDragging ? 22 : 14, spreadRadius: isHighlighted || isDragging ? 1 : 0, offset: const Offset(0, 8)),
-            BoxShadow(color: Colors.black.withValues(alpha: isDark ? 0.35 : 0.08), blurRadius: 10, offset: const Offset(0, 4)),
-          ],
-        ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
+        decoration: decoration,
+        child: _buildNodeBody(context, hasThumb: hasThumb, accent: accent),
+      ),
+    );
+  }
+
+  Widget _buildNodeBody(BuildContext context, {required bool hasThumb, required Color accent}) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
             if (hasThumb)
               node.isMemory
                   ? MemoryMediaHeroImage(
@@ -1502,12 +1792,17 @@ class _GraphNodeCard extends StatelessWidget {
                       width: node.size.width,
                       height: node.size.height,
                       fit: BoxFit.cover,
+                      useHero: false,
+                      cacheWidth: 320,
+                      filterQuality: FilterQuality.low,
                     )
                   : Image.file(
                       File(thumbnailPath!),
                       width: node.size.width,
                       height: node.size.height,
                       fit: BoxFit.cover,
+                      cacheWidth: 320,
+                      filterQuality: FilterQuality.low,
                       errorBuilder: (_, _, _) => const SizedBox.shrink(),
                     ),
             if (hasThumb)
@@ -1635,6 +1930,7 @@ class _GraphNodeCard extends StatelessWidget {
                   count: photoCount,
                   label: '$photoCount',
                   style: BouncingPhotoCountBadgeStyle.compact,
+                  animated: false,
                 ),
               ),
             if (_hasSatelliteRail)
@@ -1651,9 +1947,7 @@ class _GraphNodeCard extends StatelessWidget {
                   hasThumb: hasThumb,
                 ),
               ),
-          ],
-        ),
-      ),
+      ],
     );
   }
 
@@ -1718,10 +2012,15 @@ class _GraphNodeCard extends StatelessWidget {
 }
 
 class _GraphScaleHintBanner extends ConsumerWidget {
-  const _GraphScaleHintBanner({required this.total, required this.onPickRange});
+  const _GraphScaleHintBanner({
+    required this.total,
+    required this.onPickRange,
+    required this.onOpenList,
+  });
 
   final int total;
   final ValueChanged<GraphTimeRange> onPickRange;
+  final VoidCallback onOpenList;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1745,6 +2044,10 @@ class _GraphScaleHintBanner extends ConsumerWidget {
               onPressed: () => onPickRange(GraphTimeRange.days30),
               child: Text(t['graph_range_30d']!),
             ),
+            TextButton(
+              onPressed: onOpenList,
+              child: Text(t['graph_list_cta']!),
+            ),
           ],
         ),
       ),
@@ -1753,9 +2056,10 @@ class _GraphScaleHintBanner extends ConsumerWidget {
 }
 
 class _GraphLayoutCapBanner extends ConsumerWidget {
-  const _GraphLayoutCapBanner({required this.cap});
+  const _GraphLayoutCapBanner({required this.cap, required this.onOpenList});
 
   final int cap;
+  final VoidCallback onOpenList;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1774,6 +2078,10 @@ class _GraphLayoutCapBanner extends ConsumerWidget {
                 style: Theme.of(context).textTheme.labelSmall,
               ),
             ),
+            TextButton(
+              onPressed: onOpenList,
+              child: Text(t['graph_list_cta']!),
+            ),
           ],
         ),
       ),
@@ -1781,47 +2089,101 @@ class _GraphLayoutCapBanner extends ConsumerWidget {
   }
 }
 
-/// 관계망 하단 신뢰 안내 — 네비게이션 바로 위, 그래프 제스처와 겹치지 않게 얇게 표시.
-class _GraphTrustHintBar extends ConsumerWidget {
+/// 관계망 하단 신뢰 배너 — 짧은 한 줄 + 안내 시트, 닫으면 다시 표시하지 않음.
+class _GraphTrustHintBar extends ConsumerStatefulWidget {
   const _GraphTrustHintBar({required this.graphAiOn});
 
   final bool graphAiOn;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_GraphTrustHintBar> createState() => _GraphTrustHintBarState();
+}
+
+class _GraphTrustHintBarState extends ConsumerState<_GraphTrustHintBar> {
+  bool _sessionDismissed = false;
+
+  Future<void> _dismiss() async {
+    setState(() => _sessionDismissed = true);
+    await writeGraphTrustHintDismissed(ref.read(preferencesProvider), true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final prefsDismissed = readGraphTrustHintDismissed(ref.watch(preferencesProvider));
+    if (prefsDismissed || _sessionDismissed) return const SizedBox.shrink();
+
     final t = ref.watch(translationsProvider);
     final scheme = Theme.of(context).colorScheme;
-    final text = graphAiOn
-        ? '${t['graph_trust_hint']!} ${t['graph_trust_hint_ai_extra']!}'
-        : t['graph_trust_hint']!;
+
     return Material(
-      color: scheme.surface.withValues(alpha: 0.92),
+      color: scheme.surfaceContainerLow.withValues(alpha: 0.95),
       child: DecoratedBox(
         decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.35))),
+          border: Border(top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3))),
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          padding: const EdgeInsets.fromLTRB(10, 5, 4, 5),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Icon(
-                graphAiOn ? Icons.auto_awesome_outlined : Icons.info_outline,
-                size: 14,
-                color: scheme.onSurfaceVariant.withValues(alpha: 0.85),
+                Icons.shield_outlined,
+                size: 16,
+                color: scheme.primary.withValues(alpha: 0.85),
               ),
               const SizedBox(width: 6),
+              if (widget.graphAiOn) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.65),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    t['graph_trust_ai_badge']!,
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onPrimaryContainer,
+                        ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
               Expanded(
                 child: Text(
-                  text,
-                  maxLines: graphAiOn ? 2 : 1,
+                  t['graph_trust_short']!,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: scheme.onSurfaceVariant.withValues(alpha: 0.9),
-                        height: 1.35,
-                        fontSize: 11,
+                        color: scheme.onSurfaceVariant,
+                        fontSize: 11.5,
                       ),
                 ),
+              ),
+              TextButton(
+                onPressed: () => showGraphTrustSheet(
+                  context,
+                  t: t,
+                  graphAiOn: widget.graphAiOn,
+                ),
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  t['graph_trust_learn']!,
+                  style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: scheme.primary),
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.close_rounded, size: 18, color: scheme.onSurfaceVariant),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.all(6),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: t['close']!,
+                onPressed: _dismiss,
               ),
             ],
           ),
