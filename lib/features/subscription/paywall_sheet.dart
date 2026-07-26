@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
+import '../../core/app_theme.dart';
 import '../../core/env.dart';
 import '../../core/subscription_config.dart';
 import '../../providers/app_providers.dart';
@@ -17,7 +18,7 @@ Future<void> showProPaywall(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(AppTheme.radiusSheet)),
     ),
     builder: (ctx) => _PaywallSheet(reasonKey: reasonKey),
   );
@@ -77,21 +78,36 @@ class _PaywallSheetState extends ConsumerState<_PaywallSheet> {
   }
 
   Future<void> _restore() async {
+    final t = ref.read(translationsProvider);
     setState(() {
       _purchasing = true;
       _error = null;
     });
     try {
       final status = await SubscriptionService.instance.restorePurchases();
-      if (status != null && mounted) {
-        ref.read(subscriptionStatusProvider.notifier).state = status;
-        if (status.isProActive) {
-          Navigator.pop(context);
-        }
+      if (!mounted) return;
+
+      // 스토어 미연동(키 없음·Play 외부 설치)이면 조용히 끝나지 않도록 안내한다.
+      if (status == null) {
+        setState(() {
+          _error = AppEnv.hasRevenueCat
+              ? t['pro_store_pending']!
+              : t['pro_store_pending_no_key']!;
+        });
+        return;
       }
+
+      ref.read(subscriptionStatusProvider.notifier).state = status;
+      if (status.isProActive) {
+        Navigator.pop(context);
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t['sub_refresh_free']!)),
+      );
     } catch (e) {
       if (mounted) {
-        setState(() => _error = ref.read(translationsProvider)['pro_restore_error']!);
+        setState(() => _error = t['pro_restore_error']!);
       }
     } finally {
       if (mounted) setState(() => _purchasing = false);
@@ -208,10 +224,21 @@ class _PaywallSheetState extends ConsumerState<_PaywallSheet> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(t['pro_store_pending']!, style: const TextStyle(height: 1.45)),
+                      Text(
+                        AppEnv.hasRevenueCat
+                            ? t['pro_store_pending']!
+                            : t['pro_store_pending_no_key']!,
+                        style: const TextStyle(height: 1.45),
+                      ),
                       const SizedBox(height: 12),
                       OutlinedButton(
-                        onPressed: _purchasing ? null : _refreshEntitlements,
+                        onPressed: _purchasing
+                            ? null
+                            : () async {
+                                setState(() => _loading = true);
+                                await _load();
+                                if (mounted) await _refreshEntitlements();
+                              },
                         child: Text(t['pro_refresh_status']!),
                       ),
                     ],

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -49,30 +50,34 @@ void showMemoryDetailSheet(
   double contentHorizontalPadding = 24,
 }) {
   final useInset = sheetHorizontalMargin > 0;
+  final surface = Theme.of(context).colorScheme.surface;
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
-    backgroundColor: useInset ? Colors.transparent : null,
+    backgroundColor: surface,
     shape: useInset
-        ? null
+        ? const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24)))
         : const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-    builder: (context) => Padding(
-      padding: EdgeInsets.fromLTRB(
-        sheetHorizontalMargin,
-        0,
-        sheetHorizontalMargin,
-        kMainNavBarSheetInset,
-      ),
-      child: Material(
-        clipBehavior: useInset ? Clip.antiAlias : Clip.none,
-        borderRadius: useInset ? const BorderRadius.vertical(top: Radius.circular(24)) : null,
-        color: useInset ? Theme.of(context).colorScheme.surface : null,
-        child: _MemoryDetailSheet(
-          memory: memory,
-          imagePaths: imagePaths,
-          options: options,
-          contentHorizontalPadding: contentHorizontalPadding,
+    builder: (context) => ColoredBox(
+      color: surface,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          sheetHorizontalMargin,
+          0,
+          sheetHorizontalMargin,
+          kMainNavBarSheetInset,
+        ),
+        child: Material(
+          clipBehavior: Clip.antiAlias,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          color: surface,
+          child: _MemoryDetailSheet(
+            memory: memory,
+            imagePaths: imagePaths,
+            options: options,
+            contentHorizontalPadding: contentHorizontalPadding,
+          ),
         ),
       ),
     ),
@@ -100,17 +105,18 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
   bool _addingPhoto = false;
   bool _addingVideo = false;
 
-  Memory get _memory {
-    final list = ref.watch(memoryListProvider);
-    final anchorRaw = widget.options.graphMediaAnchorNodeId?.trim();
-    if (anchorRaw != null && anchorRaw.isNotEmpty && isEntityGraphMediaAnchor(anchorRaw)) {
-      final anchorId = canonicalGraphAnchorNodeId(anchorRaw);
-      for (final memory in list) {
-        if (graphNoteAnchorNodeId(memory) == anchorId) return memory;
-      }
-    }
-    return list.firstWhere((m) => m.id == widget.memory.id, orElse: () => widget.memory);
-  }
+  Memory get _memory => ref.watch(
+        memoryListProvider.select((list) {
+          final anchorRaw = widget.options.graphMediaAnchorNodeId?.trim();
+          if (anchorRaw != null && anchorRaw.isNotEmpty && isEntityGraphMediaAnchor(anchorRaw)) {
+            final anchorId = canonicalGraphAnchorNodeId(anchorRaw);
+            for (final memory in list) {
+              if (graphNoteAnchorNodeId(memory) == anchorId) return memory;
+            }
+          }
+          return list.firstWhere((m) => m.id == widget.memory.id, orElse: () => widget.memory);
+        }),
+      );
 
   Future<String> _resolveMediaMemoryId() async {
     final anchorRaw = widget.options.graphMediaAnchorNodeId?.trim();
@@ -119,12 +125,17 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
     if (anchorRaw.startsWith('memory_')) {
       return anchorRaw.replaceFirst('memory_', '');
     }
-    if (anchorRaw.startsWith('event_hub_')) {
-      return anchorRaw.replaceFirst('event_hub_', '');
-    }
     if (anchorRaw.startsWith('entity_note_')) {
       return anchorRaw.replaceFirst('entity_note_', '');
     }
+
+    // event_hub_slug 가 실제 기억 id인 레거시만 직접 연결. 아니면 앵커 저장소 사용.
+    if (anchorRaw.startsWith('event_hub_')) {
+      final slug = anchorRaw.replaceFirst('event_hub_', '');
+      final memories = ref.read(memoryListProvider);
+      if (memories.any((m) => m.id == slug)) return slug;
+    }
+
     if (!isEntityGraphMediaAnchor(anchorRaw)) return _memory.id;
 
     final anchorId = canonicalGraphAnchorNodeId(anchorRaw);
@@ -139,7 +150,7 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
     final related = inferPrimaryMemoryForGraphAnchor(label, primaries);
     final draft = buildMediaOnlyGraphNote(
       anchorNodeId: anchorId,
-      anchorLabel: label,
+      anchorLabel: label.isEmpty ? widget.memory.content : label,
       localeCode: localeCode,
       relatedMemoryId: related?.id,
     );
@@ -318,6 +329,28 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
     await removeVideoAtIndex(ref: ref, memoryId: _memory.id, index: index);
   }
 
+  Future<void> _deleteAllMedia() async {
+    final t = ref.read(translationsProvider);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(t['delete_all_media_confirm_title']!),
+        content: Text(t['delete_all_media_confirm_body']!),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(t['cancel']!)),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: Text(t['delete']!)),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    await deleteLocalMemoryImage(ref, _memory.id);
+    await deleteAllMemoryVideos(ref, _memory.id);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(t['all_media_deleted']!)));
+    }
+  }
+
   Future<void> _editSummary(Memory memory) async {
     final t = ref.read(translationsProvider);
     final controller = TextEditingController(text: memory.summary);
@@ -393,6 +426,7 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
         newMainText: newContent,
         previousBodyText: previousBody,
         graphMarkerLabel: graphMarker,
+        localeCode: ref.read(languageProvider).languageCode,
       );
       await ref.read(memoryListProvider.notifier).updateMemory(patched);
     }
@@ -413,16 +447,22 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final t = ref.watch(translationsProvider);
+    final t = ref.read(translationsProvider);
     final memory = _memory;
     final opts = widget.options;
-    final pathsMap = ref.watch(memoryImagePathsProvider);
-    final memosMap = ref.watch(memoryImageMemosProvider);
-    final videoMap = ref.watch(memoryVideoPathsProvider);
-    final placeCache = ref.watch(memoryPlaceNamesProvider);
-    final fullAddressCache = ref.watch(memoryPlaceFullAddressesProvider);
-    final allMemories = ref.watch(memoryListProvider);
-    final localeCode = ref.watch(languageProvider).languageCode;
+    final isReplay = opts.presentation != MemoryDetailPresentation.full;
+    // 편집 가능한(full) 모드는 항상 라이브 provider를 봐야 사진 추가·삭제가 즉시 반영됩니다.
+    // 회상(replay) 모드만 성능을 위해 전달받은 스냅샷을 사용합니다.
+    final Map<String, List<String>> pathsMap = isReplay
+        ? (widget.imagePaths ?? ref.watch(memoryImagePathsProvider))
+        : ref.watch(memoryImagePathsProvider);
+    final memosMap = isReplay ? ref.read(memoryImageMemosProvider) : ref.watch(memoryImageMemosProvider);
+    final videoMap = isReplay ? ref.read(memoryVideoPathsProvider) : ref.watch(memoryVideoPathsProvider);
+    final placeCache = isReplay ? ref.read(memoryPlaceNamesProvider) : ref.watch(memoryPlaceNamesProvider);
+    final fullAddressCache =
+        isReplay ? ref.read(memoryPlaceFullAddressesProvider) : ref.watch(memoryPlaceFullAddressesProvider);
+    final localeCode = ref.read(languageProvider).languageCode;
+    final allMemories = isGraphNoteMemory(memory) ? ref.read(memoryListProvider) : null;
     final photos = resolvedFullImagePathsForMemoryId(memory.id, pathsMap);
     final videos = resolvedVideoPathsForMemoryId(memory.id, videoMap);
     final photoMemos = photoMemosForMemoryId(memory.id, memosMap, memory: memory, photoCount: photos.length);
@@ -568,17 +608,25 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
                       child: Stack(
                         alignment: Alignment.bottomCenter,
                         children: [
-                          MemoryMediaHeroImage(
-                            memoryId: memory.id,
-                            photoIndex: i,
-                            path: photos[i],
-                            width: double.infinity,
-                            height: photoHeight,
-                            fit: BoxFit.cover,
-                            borderRadius: BorderRadius.circular(12),
-                            filterQuality: FilterQuality.high,
-                            cacheWidth: opts.isLight ? 1600 : 1400,
-                          ),
+                          kIsWeb
+                              ? Image.network(
+                                  photos[i],
+                                  width: double.infinity,
+                                  height: photoHeight,
+                                  fit: BoxFit.cover,
+                                )
+                              : MemoryMediaHeroImage(
+                                  memoryId: memory.id,
+                                  photoIndex: i,
+                                  path: photos[i],
+                                  width: double.infinity,
+                                  height: photoHeight,
+                                  fit: BoxFit.cover,
+                                  borderRadius: BorderRadius.circular(12),
+                                  filterQuality: FilterQuality.medium,
+                                  cacheWidth: opts.isLight ? 1000 : 900,
+                                  useHero: false,
+                                ),
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 6),
@@ -647,26 +695,9 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
       return widgets;
     }
 
-    return DraggableScrollableSheet(
-      expand: false,
-      initialChildSize: opts.isLight
-          ? (hasMedia ? 0.88 : (memory.content.trim().isNotEmpty ? 0.55 : 0.42))
-          : _fullModeInitialSheetSize(
-              hasMedia: hasMedia,
-              hasText: hasText,
-              mediaCount: photos.length + videos.length,
-            ),
-      maxChildSize: 0.92,
-      builder: (context, scrollController) => LayoutBuilder(
-        builder: (context, constraints) {
-          return SingleChildScrollView(
-            controller: scrollController,
-            padding: EdgeInsets.all(widget.contentHorizontalPadding),
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
+    final detailColumn = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
             if (opts.showReturnBar) ...[
               Align(
                 alignment: Alignment.centerLeft,
@@ -685,7 +716,7 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
             if (_entityHighlightLabel() != null &&
                 countEntityHighlightSlides(
                   entityLabel: _entityHighlightLabel()!,
-                  allMemories: ref.watch(memoryListProvider),
+                  allMemories: ref.read(memoryListProvider),
                   imagePaths: pathsMap,
                   videoPaths: videoMap,
                 ) >
@@ -749,7 +780,7 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
               const SizedBox(height: 16),
             ],
             ...mediaChildren(),
-            if (editable)
+            if (editable) ...[
               Row(
                 children: [
                   Expanded(
@@ -773,32 +804,53 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
                   ),
                 ],
               ),
-            if (!opts.isLight) ...[
+              if (hasMedia) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _deleteAllMedia,
+                    icon: const Icon(Icons.delete_sweep_outlined),
+                    label: Text(t['delete_all_media']!),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.error,
+                      side: BorderSide(
+                        color: Theme.of(context).colorScheme.error.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+            if (opts.showRelationshipTags) ...[
               const SizedBox(height: 16),
               Row(
                 children: [
                   Expanded(
                     child: Text(
-                      ref.watch(translationsProvider)['entity_edit_section'] ?? '관계 태그',
+                      t['entity_edit_section'] ?? '관계 태그',
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
                     ),
                   ),
-                  TextButton.icon(
-                    onPressed: () => showMemoryEntityEditor(context, ref, memory: memory),
-                    icon: const Icon(Icons.edit_outlined, size: 16),
-                    label: Text(ref.watch(translationsProvider)['edit'] ?? '수정'),
-                  ),
+                  if (opts.allowEntityEdit)
+                    TextButton.icon(
+                      onPressed: () => showMemoryEntityEditor(context, ref, memory: memory),
+                      icon: const Icon(Icons.edit_outlined, size: 16),
+                      label: Text(t['edit'] ?? '수정'),
+                    ),
                 ],
               ),
-              if (displayEntitiesForMemory(memory).isNotEmpty)
+              if (displayEntitiesForMemory(memory, localeCode: localeCode).isNotEmpty)
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
-                  children: displayEntitiesForMemory(memory).map((e) => Chip(label: Text(e))).toList(),
+                  children: displayEntitiesForMemory(memory, localeCode: localeCode)
+                      .map((e) => Chip(label: Text(e)))
+                      .toList(),
                 )
               else
                 Text(
-                  ref.watch(translationsProvider)['entity_edit_empty']!,
+                  t['entity_edit_empty']!,
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -807,11 +859,50 @@ class _MemoryDetailSheetState extends ConsumerState<_MemoryDetailSheet> {
               const SizedBox(height: 8),
             ],
             if (!opts.isLight) MemoryRelatedSection(memory: memory),
-                ],
+      ],
+    );
+
+    final padding = EdgeInsets.all(widget.contentHorizontalPadding);
+
+    if (isReplay) {
+      final sheetHeight = MediaQuery.sizeOf(context).height *
+          (opts.isLight
+              ? (hasMedia ? 0.88 : (memory.content.trim().isNotEmpty ? 0.55 : 0.42))
+              : (hasMedia ? 0.85 : 0.5));
+      return SizedBox(
+        height: sheetHeight,
+        child: RepaintBoundary(
+          child: SingleChildScrollView(
+            physics: const ClampingScrollPhysics(),
+            padding: padding,
+            child: detailColumn,
+          ),
+        ),
+      );
+    }
+
+    return DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: _fullModeInitialSheetSize(
+        hasMedia: hasMedia,
+        hasText: hasText,
+        mediaCount: photos.length + videos.length,
+      ),
+      maxChildSize: 0.92,
+      builder: (context, scrollController) => RepaintBoundary(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              controller: scrollController,
+              physics: const ClampingScrollPhysics(),
+              padding: padding,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                child: detailColumn,
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

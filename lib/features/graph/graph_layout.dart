@@ -19,9 +19,11 @@ import '../../utils/ocr_utils.dart';
 import '../../utils/memory_keyword_ui.dart';
 import '../../utils/korean_person_names.dart';
 import '../../utils/memory_entity_extract.dart';
+import '../../utils/memory_entity_cache.dart';
 import '../../utils/memory_participation_extract.dart';
 import '../../utils/entity_canonical.dart';
 import '../../utils/memory_graph_semantics.dart';
+import '../../utils/organization_hierarchy.dart';
 import 'graph_node_kind_map.dart';
 import 'graph_chat_save.dart';
 
@@ -31,6 +33,7 @@ enum GraphNodeKind {
   group,
   eventHub,
   person,
+  pet,
   place,
   activity,
   event,
@@ -57,6 +60,8 @@ class GraphNodeData {
   final Size size;
   /// 배치·드래그 묶음 (같은 날+장소 타임라인 그룹).
   final String layoutClusterId;
+  /// 관계망 허브 깊이 (0=루트).
+  final int? hubDepth;
   /// 위성 접힘 시 배지 (예: 👤2 · 📍1).
   final String? satelliteBadge;
 
@@ -70,6 +75,7 @@ class GraphNodeData {
     required this.kind,
     required this.size,
     required this.layoutClusterId,
+    this.hubDepth,
     this.satelliteBadge,
   });
 
@@ -82,6 +88,7 @@ class GraphNodeData {
 Color graphNodeKindColor(GraphNodeKind kind) {
   return switch (kind) {
     GraphNodeKind.person => AppGraphColors.person,
+    GraphNodeKind.pet => AppGraphColors.pet,
     GraphNodeKind.place => AppGraphColors.place,
     GraphNodeKind.activity => AppGraphColors.activity,
     GraphNodeKind.event => AppGraphColors.event,
@@ -95,6 +102,22 @@ Color graphNodeKindColor(GraphNodeKind kind) {
     GraphNodeKind.eventHub => AppGraphColors.eventHub,
     GraphNodeKind.memory => AppGraphColors.memory,
     GraphNodeKind.group => AppGraphColors.group,
+  };
+}
+
+
+/// 조직 계층 노드 → 그래프 노드 종류.
+GraphNodeKind graphKindForOrgKind(OrganizationNodeKind kind) {
+  return switch (kind) {
+    OrganizationNodeKind.organization => GraphNodeKind.organization,
+    OrganizationNodeKind.person => GraphNodeKind.person,
+    OrganizationNodeKind.project => GraphNodeKind.eventHub,
+    OrganizationNodeKind.place => GraphNodeKind.place,
+    OrganizationNodeKind.event => GraphNodeKind.event,
+    OrganizationNodeKind.activity => GraphNodeKind.activity,
+    OrganizationNodeKind.food => GraphNodeKind.food,
+    OrganizationNodeKind.pet => GraphNodeKind.pet,
+    OrganizationNodeKind.item => GraphNodeKind.content,
   };
 }
 
@@ -294,7 +317,7 @@ GraphLayout buildMemoryGraphLayout(
 
       for (final memory in primaryMemories) {
         final fragment = fragmentFor(memory);
-        final bundle = extractMemoryEntities(memory, localeCode: localeCode, aiFragment: fragment);
+        final bundle = MemoryEntityCache.bundle(memory, localeCode: localeCode, aiFragment: fragment);
         final cardLabels = buildGraphMemoryCardLabels(
           memory,
           placeCache,
@@ -313,7 +336,7 @@ GraphLayout buildMemoryGraphLayout(
       final suppressed = suppressedMemoryIds.contains(memory.id);
       final memoryId = 'memory_${memory.id}';
       final fragment = fragmentFor(memory);
-      final bundle = extractMemoryEntities(memory, localeCode: localeCode, aiFragment: fragment);
+      final bundle = MemoryEntityCache.bundle(memory, localeCode: localeCode, aiFragment: fragment);
       final cardLabels = buildGraphMemoryCardLabels(
         memory,
         placeCache,
@@ -472,6 +495,7 @@ KeywordFocusGraphResult buildKeywordFocusGraphLayout(
       ? GraphNodeKind.activity
       : switch (classifyKeyword(k, shown.first, localeCode: localeCode)) {
           MemoryKeywordKind.person => GraphNodeKind.person,
+          MemoryKeywordKind.pet => GraphNodeKind.pet,
           MemoryKeywordKind.place => GraphNodeKind.place,
           MemoryKeywordKind.event => GraphNodeKind.event,
           MemoryKeywordKind.interest => GraphNodeKind.interest,
@@ -681,6 +705,7 @@ void _attachSatelliteNodes({
   }
 
   attachMany('person', GraphNodeKind.person, satellites.people);
+  attachMany('pet', GraphNodeKind.pet, satellites.pets);
   attachMany('place', GraphNodeKind.place, satellites.places);
   attachMany('organization', GraphNodeKind.organization, satellites.organizations);
   attachMany('event', GraphNodeKind.event, satellites.events);
@@ -771,7 +796,7 @@ void _attachSatelliteNodes({
 }
 
 List<String> _peopleFromMemory(Memory memory, {String localeCode = 'ko'}) {
-  return extractMemoryEntities(memory, localeCode: localeCode)
+  return MemoryEntityCache.bundle(memory, localeCode: localeCode)
       .people
       .where((p) => !isSelfPersonLabel(p, localeCode))
       .toList();
@@ -824,7 +849,7 @@ void _attachSelfPersonContext({
 }
 
 String _kindPrefixForRelationObject(String obj, Memory memory, String localeCode) {
-  final bundle = extractMemoryEntities(memory, localeCode: localeCode);
+  final bundle = MemoryEntityCache.bundle(memory, localeCode: localeCode);
   if (bundle.places.any((p) => entityLabelMatchesKeyword(p, obj))) return 'place';
   if (bundle.events.any((e) => entityLabelMatchesKeyword(e, obj))) return 'event';
   if (bundle.interests.any((i) => entityLabelMatchesKeyword(i, obj))) return 'interest';
@@ -841,8 +866,8 @@ bool _memoriesSharePeople(Memory a, Memory b, {String localeCode = 'ko'}) {
 }
 
 bool _memoriesShareStoryContext(Memory a, Memory b, {String localeCode = 'ko'}) {
-  final bundleA = extractMemoryEntities(a, localeCode: localeCode);
-  final bundleB = extractMemoryEntities(b, localeCode: localeCode);
+  final bundleA = MemoryEntityCache.bundle(a, localeCode: localeCode);
+  final bundleB = MemoryEntityCache.bundle(b, localeCode: localeCode);
   if (bundleA.places.toSet().intersection(bundleB.places.toSet()).isNotEmpty) return true;
   final titleA = bundleA.eventTitle.trim();
   final titleB = bundleB.eventTitle.trim();
@@ -858,6 +883,7 @@ String _kindLabel(GraphNodeKind kind, String localeCode) {
       GraphNodeKind.group => '하루 묶음',
       GraphNodeKind.eventHub => '이벤트',
       GraphNodeKind.person => '사람',
+      GraphNodeKind.pet => '반려견',
       GraphNodeKind.place => '장소',
       GraphNodeKind.activity => '활동',
       GraphNodeKind.event => '이벤트',
@@ -875,6 +901,7 @@ String _kindLabel(GraphNodeKind kind, String localeCode) {
     GraphNodeKind.group => 'Day cluster',
     GraphNodeKind.eventHub => 'Event',
     GraphNodeKind.person => 'Person',
+    GraphNodeKind.pet => 'Pet',
     GraphNodeKind.place => 'Place',
     GraphNodeKind.activity => 'Activity',
     GraphNodeKind.event => 'Event',
@@ -959,7 +986,7 @@ void _attachGraphNotesToAnchors({
       clusterColor = colorForMemory(related);
       clusterId = clusterKeyForMemory(related).id;
       if (prefix == 'place') {
-        final bundle = extractMemoryEntities(related, localeCode: localeCode);
+        final bundle = MemoryEntityCache.bundle(related, localeCode: localeCode);
         final hubTitle = bundle.eventTitle.trim();
         if (hubTitle.isNotEmpty && hubTitle.contains(anchor.trim())) continue;
       }
@@ -1072,7 +1099,7 @@ Set<String> entityKeysForMemory(
   required String localeCode,
   String? excludeKeyword,
 }) {
-  final bundle = extractMemoryEntities(memory, localeCode: localeCode, aiFragment: fragment);
+  final bundle = MemoryEntityCache.bundle(memory, localeCode: localeCode, aiFragment: fragment);
   final keys = entityKeysFromBundle(bundle)
       .where((k) => k != 'person::${selfPersonGraphLabel(localeCode)}')
       .toSet();
@@ -1217,46 +1244,53 @@ bool _satelliteKindAllowed(String kindPrefix, GraphSatelliteExpandMode filterMod
   };
 }
 
-/// 드래그 시 함께 움직일 노드 (기억/허브 + 직접 연결 위성만).
+/// 드래그 시 함께 움직일 노드 (허브 + 하위 트리 위성).
 Set<String> dragGroupForNode(String nodeId, List<GraphEdgeData> edges, List<GraphNodeData> nodes) {
   final nodeMap = {for (final n in nodes) n.id: n};
   final node = nodeMap[nodeId];
   if (node == null) return {nodeId};
 
-  if (nodeId.startsWith('focus_hub_')) {
-    final attached = <String>{nodeId};
-    for (final edge in edges) {
-      if (edge.fromId == nodeId) attached.add(edge.toId);
+  final isHubLike = node.kind == GraphNodeKind.group ||
+      node.kind == GraphNodeKind.memory ||
+      node.kind == GraphNodeKind.eventHub ||
+      nodeId.startsWith('focus_hub_') ||
+      nodeId.startsWith('event_hub_') ||
+      nodeId.startsWith('person_hub_') ||
+      nodeId.startsWith('group_');
+
+  if (!isHubLike) return {nodeId};
+
+  final children = <String, List<String>>{};
+  for (final edge in edges) {
+    // 의미 교차 링크는 그룹 드래그에 넣지 않아 엉킴을 줄입니다.
+    if (edge.semanticLink) continue;
+    if (edge.memoryToMemory && node.kind != GraphNodeKind.group) continue;
+    children.putIfAbsent(edge.fromId, () => []).add(edge.toId);
+    if (node.kind == GraphNodeKind.group && edge.memoryToMemory) {
+      children.putIfAbsent(edge.toId, () => []).add(edge.fromId);
     }
-    return attached;
   }
 
-  if (node.kind == GraphNodeKind.group) {
-    final groupId = nodeId;
-    final attached = <String>{groupId};
-    for (final edge in edges) {
-      if (edge.memoryToMemory) continue;
-      if (edge.fromId == groupId) attached.add(edge.toId);
-      if (edge.toId == groupId) attached.add(edge.fromId);
+  final attached = <String>{};
+  final queue = <String>[nodeId];
+  while (queue.isNotEmpty) {
+    final id = queue.removeLast();
+    if (!attached.add(id)) continue;
+    for (final child in children[id] ?? const <String>[]) {
+      if (nodeMap.containsKey(child)) queue.add(child);
     }
-    for (final edge in edges) {
-      if (!edge.memoryToMemory) continue;
-      if (attached.contains(edge.fromId)) attached.add(edge.toId);
-      if (attached.contains(edge.toId)) attached.add(edge.fromId);
-    }
-    return attached;
   }
+  return attached;
+}
 
-  if (node.kind == GraphNodeKind.memory) {
-    final attached = <String>{nodeId};
-    for (final edge in edges) {
-      if (edge.memoryToMemory) continue;
-      if (edge.fromId == nodeId) attached.add(edge.toId);
-    }
-    return attached;
-  }
-
-  return {nodeId};
+bool isGraphHubLikeNode(GraphNodeData node) {
+  return node.kind == GraphNodeKind.group ||
+      node.kind == GraphNodeKind.memory ||
+      node.kind == GraphNodeKind.eventHub ||
+      node.id.startsWith('focus_hub_') ||
+      node.id.startsWith('event_hub_') ||
+      node.id.startsWith('person_hub_') ||
+      node.id.startsWith('group_');
 }
 
 List<Set<String>> buildGraphClusters(List<GraphNodeData> nodes, List<GraphEdgeData> edges) {
@@ -1293,6 +1327,60 @@ Size graphCanvasSize(int layoutClusterCount) {
   );
 }
 
+/// 저장된 허브 위치를 기준으로 기본 트리 오프셋을 재배치합니다.
+/// 위성 펼침 시 원형 좌표로 엉키지 않게 허브 아래로 붙입니다.
+Map<String, Offset> mergeStoredGraphPositions({
+  required List<GraphNodeData> nodes,
+  required List<GraphEdgeData> edges,
+  required Map<String, Offset> defaults,
+  required Map<String, Offset> stored,
+  Offset fallback = const Offset(240, 240),
+}) {
+  final result = <String, Offset>{};
+  final parentOf = <String, String>{};
+  for (final edge in edges) {
+    if (edge.semanticLink || edge.memoryToMemory) continue;
+    parentOf.putIfAbsent(edge.toId, () => edge.fromId);
+  }
+
+  // 허브·기억 등 앵커는 저장 좌표 우선
+  for (final node in nodes) {
+    final storedPos = stored[node.id];
+    if (storedPos != null) {
+      result[node.id] = storedPos;
+      continue;
+    }
+    if (isGraphHubLikeNode(node) || node.kind == GraphNodeKind.memory) {
+      result[node.id] = defaults[node.id] ?? fallback;
+    }
+  }
+
+  // 위성은 부모 현재 위치 + (기본 위성 - 기본 부모) 상대 오프셋
+  for (final node in nodes) {
+    if (result.containsKey(node.id)) continue;
+    final parentId = parentOf[node.id];
+    final defNode = defaults[node.id];
+    if (parentId != null) {
+      final parentNow = result[parentId] ?? stored[parentId] ?? defaults[parentId];
+      final parentDef = defaults[parentId];
+      if (parentNow != null && parentDef != null && defNode != null) {
+        result[node.id] = parentNow + (defNode - parentDef);
+        continue;
+      }
+      if (parentNow != null) {
+        result[node.id] = parentNow + const Offset(0, 110);
+        continue;
+      }
+    }
+    result[node.id] = defNode ?? fallback;
+  }
+
+  for (final node in nodes) {
+    result.putIfAbsent(node.id, () => defaults[node.id] ?? fallback);
+  }
+  return result;
+}
+
 Map<String, Offset> initialGraphPositions(
   List<GraphNodeData> nodes,
   List<GraphEdgeData> edges,
@@ -1306,51 +1394,109 @@ Map<String, Offset> initialGraphPositions(
     layoutClusters.putIfAbsent(node.layoutClusterId, () => []).add(node);
   }
 
+  final children = <String, List<String>>{};
+  final nodeMap = {for (final n in nodes) n.id: n};
+  for (final edge in edges) {
+    if (edge.semanticLink) continue;
+    if (edge.memoryToMemory) continue;
+    if (!nodeMap.containsKey(edge.fromId) || !nodeMap.containsKey(edge.toId)) continue;
+    children.putIfAbsent(edge.fromId, () => []).add(edge.toId);
+  }
+  for (final entry in children.entries) {
+    entry.value.sort((a, b) {
+      final ka = nodeMap[a]!;
+      final kb = nodeMap[b]!;
+      final kindCmp = ka.kind.index.compareTo(kb.kind.index);
+      if (kindCmp != 0) return kindCmp;
+      return ka.title.compareTo(kb.title);
+    });
+  }
+
   final clusterKeys = layoutClusters.keys.toList();
   final cols = math.max(1, math.sqrt(clusterKeys.length).ceil());
-  const spacingX = 460.0;
-  const spacingY = 400.0;
+  // 트리 폭을 고려해 클러스터 간격을 넉넉히
+  const spacingX = 560.0;
+  const spacingY = 520.0;
+  const rowGap = 112.0;
+  const colGap = 148.0;
+
+  double layoutTree(String nodeId, double xCursor, double originY, int depth) {
+    final kids = (children[nodeId] ?? const <String>[])
+        .where((id) => !positions.containsKey(id) || depth == 0)
+        .where(nodeMap.containsKey)
+        .toList();
+    // 이미 배치된 자식(다른 부모에 귀속)은 스킵
+    final freshKids = <String>[];
+    for (final kid in kids) {
+      if (!positions.containsKey(kid)) freshKids.add(kid);
+    }
+    final y = originY + depth * rowGap;
+    if (freshKids.isEmpty) {
+      positions[nodeId] = Offset(xCursor, y);
+      return xCursor + colGap;
+    }
+    final start = xCursor;
+    for (final kid in freshKids) {
+      xCursor = layoutTree(kid, xCursor, originY, depth + 1);
+    }
+    final mid = (start + xCursor - colGap) / 2;
+    positions[nodeId] = Offset(mid, y);
+    return xCursor;
+  }
 
   for (var i = 0; i < clusterKeys.length; i++) {
     final col = i % cols;
     final row = i ~/ cols;
-    final center = Offset(280 + col * spacingX, 280 + row * spacingY);
+    final origin = Offset(300 + col * spacingX, 180 + row * spacingY);
     final members = layoutClusters[clusterKeys[i]]!;
-    final hub = members.where((n) => n.kind == GraphNodeKind.group).toList();
+    final hubs = members.where((n) => n.kind == GraphNodeKind.group).toList();
     final memories = members.where((n) => n.kind == GraphNodeKind.memory).toList();
     final entityNotes = members.where((n) => n.id.startsWith('entity_note_')).toList();
-    final satellites = members
-        .where((n) => n.kind != GraphNodeKind.memory && n.kind != GraphNodeKind.group)
-        .where((n) => !n.id.startsWith('entity_note_'))
-        .toList();
 
-    if (hub.isNotEmpty) {
-      positions[hub.first.id] = center;
-      for (var m = 0; m < memories.length; m++) {
-        final angle = (2 * math.pi * m / math.max(memories.length, 1)) - math.pi / 2;
-        positions[memories[m].id] = center + Offset(math.cos(angle) * 124, math.sin(angle) * 96);
-      }
+    String? rootId;
+    if (hubs.isNotEmpty) {
+      rootId = hubs.first.id;
     } else if (memories.length == 1) {
-      positions[memories.first.id] = center;
+      rootId = memories.first.id;
+    }
+
+    if (rootId != null) {
+      // 그룹 아래 기억들을 자식으로 강제 연결(엣지 누락 대비)
+      if (hubs.isNotEmpty) {
+        final hubId = hubs.first.id;
+        final memKids = children.putIfAbsent(hubId, () => <String>[]);
+        for (final m in memories) {
+          if (!memKids.contains(m.id)) memKids.add(m.id);
+        }
+      }
+      layoutTree(rootId, origin.dx, origin.dy, 0);
     } else if (memories.isNotEmpty) {
+      final width = (memories.length - 1) * colGap;
       for (var m = 0; m < memories.length; m++) {
-        final angle = (2 * math.pi * m / memories.length) - math.pi / 2;
-        positions[memories[m].id] = center + Offset(math.cos(angle) * 72, math.sin(angle) * 56);
+        final memOrigin = Offset(origin.dx - width / 2 + m * colGap, origin.dy);
+        layoutTree(memories[m].id, memOrigin.dx, memOrigin.dy, 0);
       }
     }
 
-    for (var s = 0; s < satellites.length; s++) {
-      const slotsPerRing = 8;
-      final ring = s ~/ slotsPerRing;
-      final slot = s % slotsPerRing;
-      final angle = (2 * math.pi * slot / slotsPerRing) + math.pi / 8 + ring * 0.18;
-      final orbitX = 198.0 + ring * 56.0;
-      final orbitY = 156.0 + ring * 44.0;
-      final anchor = hub.isNotEmpty
-          ? center
-          : (memories.isNotEmpty ? positions[memories.first.id]! : center);
-      positions[satellites[s].id] =
-          anchor + Offset(math.cos(angle) * orbitX, math.sin(angle) * orbitY);
+    // 트리에 못 붙은 위성: 클러스터 하단 행으로 정리
+    final unplaced = members.where((n) => !positions.containsKey(n.id) && !n.id.startsWith('entity_note_')).toList();
+    if (unplaced.isNotEmpty) {
+      var maxY = origin.dy;
+      var minX = origin.dx;
+      var maxX = origin.dx;
+      for (final n in members) {
+        final p = positions[n.id];
+        if (p == null) continue;
+        maxY = math.max(maxY, p.dy);
+        minX = math.min(minX, p.dx);
+        maxX = math.max(maxX, p.dx);
+      }
+      final rowY = maxY + rowGap;
+      final width = (unplaced.length - 1) * colGap;
+      final startX = (minX + maxX) / 2 - width / 2;
+      for (var s = 0; s < unplaced.length; s++) {
+        positions[unplaced[s].id] = Offset(startX + s * colGap, rowY);
+      }
     }
 
     for (final noteNode in entityNotes) {
@@ -1371,7 +1517,7 @@ Map<String, Offset> initialGraphPositions(
         return false;
       }).toList();
       final index = siblings.indexWhere((n) => n.id == noteNode.id).clamp(0, siblings.length - 1);
-      positions[noteNode.id] = parentPos + Offset(-4, 52 + index * 48.0);
+      positions[noteNode.id] = parentPos + Offset(0, 56 + index * 48.0);
     }
   }
 
@@ -1386,23 +1532,37 @@ class GraphEdgesPainter extends CustomPainter {
   final Map<String, Offset> positions;
   final Map<String, GraphNodeData> nodeMap;
   final bool isDark;
+  final Set<String>? visibleNodeIds;
+  final bool declutter;
+  final bool hideLabels;
 
   GraphEdgesPainter({
     required this.edges,
     required this.positions,
     required this.nodeMap,
     required this.isDark,
+    this.visibleNodeIds,
+    this.declutter = false,
+    this.hideLabels = false,
   });
+
+  bool _edgeVisible(GraphEdgeData edge) {
+    final ids = visibleNodeIds;
+    if (ids == null || ids.isEmpty) return true;
+    return ids.contains(edge.fromId) && ids.contains(edge.toId);
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
     for (final edge in edges) {
       if (!edge.bridgeLink) continue;
+      if (!_edgeVisible(edge)) continue;
       _paintBridgeEdge(canvas, edge);
     }
 
     for (final edge in edges) {
       if (edge.bridgeLink) continue;
+      if (!_edgeVisible(edge)) continue;
       final from = positions[edge.fromId];
       final to = positions[edge.toId];
       if (from == null || to == null) continue;
@@ -1419,6 +1579,12 @@ class GraphEdgesPainter extends CustomPainter {
             ..strokeWidth = 2.8
             ..color = Colors.deepPurpleAccent.withValues(alpha: isDark ? 0.85 : 0.7);
           canvas.drawPath(path, paint);
+        } else if (declutter) {
+          final solid = Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..color = edge.color.withValues(alpha: isDark ? 0.55 : 0.4);
+          canvas.drawLine(from, to, solid);
         } else {
           final dashPaint = Paint()
             ..style = PaintingStyle.stroke
@@ -1432,20 +1598,39 @@ class GraphEdgesPainter extends CustomPainter {
       if (edge.relationEdge) {
         final paint = Paint()
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.4
-          ..color = const Color(0xFF2E7D32).withValues(alpha: isDark ? 0.9 : 0.75);
-        canvas.drawPath(path, paint);
-        if (edge.label != null && edge.label!.isNotEmpty) {
-          _paintEdgeLabel(canvas, control, edge.label!);
+          ..strokeWidth = declutter ? 1.6 : 2.4
+          ..color = const Color(0xFF2E7D32).withValues(alpha: isDark ? 0.75 : 0.65);
+        // 트리형: 큰 곡선 대신 짧은 벤드로 교차 체감 완화
+        final treePath = Path()
+          ..moveTo(from.dx, from.dy)
+          ..quadraticBezierTo(
+            (from.dx + to.dx) / 2,
+            (from.dy + to.dy) / 2 - (declutter ? 8 : 18),
+            to.dx,
+            to.dy,
+          );
+        canvas.drawPath(treePath, paint);
+        if (!hideLabels &&
+            edge.label != null &&
+            edge.label!.isNotEmpty &&
+            (from - to).distance < 260) {
+          _paintEdgeLabel(
+            canvas,
+            Offset((from.dx + to.dx) / 2, (from.dy + to.dy) / 2 - 10),
+            edge.label!,
+          );
         }
         continue;
       }
 
       final linePaint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8
-        ..color = edge.color.withValues(alpha: isDark ? 0.55 : 0.45);
-      canvas.drawPath(path, linePaint);
+        ..strokeWidth = declutter ? 1.2 : 1.8
+        ..color = edge.color.withValues(alpha: isDark ? 0.45 : 0.4);
+      final satPath = Path()
+        ..moveTo(from.dx, from.dy)
+        ..lineTo(to.dx, to.dy);
+      canvas.drawPath(satPath, linePaint);
     }
   }
 
@@ -1486,7 +1671,12 @@ class GraphEdgesPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant GraphEdgesPainter oldDelegate) {
-    return oldDelegate.positions != positions || oldDelegate.edges != edges || oldDelegate.isDark != isDark;
+    return oldDelegate.positions != positions ||
+        oldDelegate.edges != edges ||
+        oldDelegate.isDark != isDark ||
+        oldDelegate.visibleNodeIds != visibleNodeIds ||
+        oldDelegate.declutter != declutter ||
+        oldDelegate.hideLabels != hideLabels;
   }
 
   void _drawDashedPath(Canvas canvas, Path path, Paint paint, {required double dash, required double gap}) {

@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../features/graph/graph_layout.dart';
 import '../models/memory.dart';
 import 'graph_satellites.dart';
+import 'memory_entity_cache.dart';
+import 'memory_entity_edit.dart';
 import 'memory_keyword_ui.dart';
 
 /// 회상·미리보기용 위성 칩 항목.
@@ -18,7 +20,19 @@ List<GraphSatelliteChipItem> collectGraphSatelliteChipItems(
   String localeCode = 'ko',
   int maxCount = 6,
 }) {
-  final satellites = visibleGraphSatellitesForMemory(memory, localeCode: localeCode);
+  if (memoryHasManualEntityEdit(memory)) {
+    return displayTagsForMemory(memory, localeCode: localeCode)
+        .take(maxCount)
+        .map(
+          (label) => GraphSatelliteChipItem(
+            label: label,
+            kind: _chipKindForLabel(label, memory, localeCode),
+          ),
+        )
+        .toList();
+  }
+
+  final satellites = MemoryEntityCache.visibleSatellites(memory, localeCode: localeCode);
   final items = <GraphSatelliteChipItem>[];
 
   void addMany(GraphNodeKind kind, List<String> labels) {
@@ -29,6 +43,7 @@ List<GraphSatelliteChipItem> collectGraphSatelliteChipItems(
   }
 
   addMany(GraphNodeKind.person, satellites.people);
+  addMany(GraphNodeKind.pet, satellites.pets);
   addMany(GraphNodeKind.place, satellites.places);
   addMany(GraphNodeKind.activity, satellites.activities);
   addMany(GraphNodeKind.event, satellites.events);
@@ -41,9 +56,24 @@ List<GraphSatelliteChipItem> collectGraphSatelliteChipItems(
   return items;
 }
 
+GraphNodeKind _chipKindForLabel(String label, Memory memory, String localeCode) {
+  return switch (classifyKeyword(label, memory, localeCode: localeCode)) {
+    MemoryKeywordKind.person => GraphNodeKind.person,
+    MemoryKeywordKind.pet => GraphNodeKind.pet,
+    MemoryKeywordKind.place => GraphNodeKind.place,
+    MemoryKeywordKind.event => GraphNodeKind.event,
+    MemoryKeywordKind.interest => GraphNodeKind.interest,
+    MemoryKeywordKind.food => GraphNodeKind.food,
+    MemoryKeywordKind.organization => GraphNodeKind.organization,
+    MemoryKeywordKind.activity => GraphNodeKind.activity,
+    MemoryKeywordKind.tag => GraphNodeKind.activity,
+  };
+}
+
 IconData iconForGraphNodeKind(GraphNodeKind kind) {
   return switch (kind) {
     GraphNodeKind.person => Icons.person_outline_rounded,
+    GraphNodeKind.pet => Icons.pets_outlined,
     GraphNodeKind.place => Icons.place_outlined,
     GraphNodeKind.activity => Icons.directions_walk_outlined,
     GraphNodeKind.event => Icons.event_outlined,

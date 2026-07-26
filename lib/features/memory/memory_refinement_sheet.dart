@@ -19,7 +19,8 @@ Future<MemoryRefinementResult?> showMemoryRefinementSheet(
   return showModalBottomSheet<MemoryRefinementResult>(
     context: context,
     isScrollControlled: true,
-    useSafeArea: true,
+    useSafeArea: false,
+    useRootNavigator: true,
     isDismissible: false,
     enableDrag: true,
     backgroundColor: Theme.of(context).colorScheme.surface,
@@ -157,14 +158,23 @@ class _MemoryRefinementSheetState extends ConsumerState<_MemoryRefinementSheet> 
     final t = ref.watch(translationsProvider);
     final theme = Theme.of(context);
     final dateFmt = DateFormat.yMMMMEEEEd(widget.localeCode).add_jm();
+    final media = MediaQuery.of(context);
+    final maxSheetHeight = media.size.height * 0.92;
 
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-      child: SingleChildScrollView(
+      padding: EdgeInsets.only(bottom: media.viewInsets.bottom),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxSheetHeight),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
             const SizedBox(height: 12),
             Center(
               child: Container(
@@ -299,9 +309,14 @@ class _MemoryRefinementSheetState extends ConsumerState<_MemoryRefinementSheet> 
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+            const SizedBox(height: 8),
+                  ],
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              minimum: const EdgeInsets.fromLTRB(24, 12, 24, 16),
               child: FilledButton(
                 onPressed: _confirm,
                 style: FilledButton.styleFrom(

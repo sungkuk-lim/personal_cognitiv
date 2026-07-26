@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/app_theme.dart';
@@ -36,11 +38,11 @@ import 'graph_chat_save.dart';
 import 'graph_context_lens_bar.dart';
 import 'graph_pro_value_banner.dart';
 import 'graph_event_layout.dart';
+import 'graph_interactive_canvas.dart';
 import 'graph_help_sheet.dart';
 import 'graph_trust_sheet.dart';
 import 'graph_lens_mode_bar.dart';
 import 'graph_list_view.dart';
-import 'graph_person_detail_sheet.dart';
 import 'graph_person_layout.dart';
 import 'graph_layout.dart';
 import 'graph_onboarding.dart';
@@ -59,12 +61,17 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
   final TransformationController _transformController = TransformationController();
   bool _draggingNode = false;
   Map<String, Offset>? _livePositions;
+  /// 드래그 중 맵 복사 없이 tick만 올려 경량 페인터를 갱신합니다.
+  final ValueNotifier<int> _dragTick = ValueNotifier(0);
+  Timer? _longPressTimer;
   int? _activePointer;
   String? _dragNodeId;
   Set<String> _dragGroup = {};
   bool _moveCluster = false;
   Offset? _lastCanvasPosition;
   bool _moved = false;
+  /// 팬/줌 중 컬링 재계산을 프레임마다 하지 않도록 고정합니다.
+  Set<String>? _frozenVisibleIds;
   Map<String, GraphSatelliteExpandMode> _satelliteExpansions = {};
   final Set<String> _collapsedSatelliteMemoryIds = {};
   final Set<String> _collapsedClusterIds = {};
@@ -82,7 +89,10 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
   Map<String, Offset> _focusDragPositions = {};
   String? _focusDragScope;
   bool _pendingLayoutInvalidation = false;
+  Map<String, GraphSatelliteExpandMode>? _cachedMergedExpansions;
+  String? _cachedExpansionFingerprint;
   String? _lastFitFingerprint;
+  Timer? _cullRefreshTimer;
 
   @override
   void initState() {
@@ -90,6 +100,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     WidgetsBinding.instance.addObserver(this);
     warmMemoryImagesDirectoryCache();
     warmMemoryVideosDirectoryCache();
+    _transformController.addListener(_onTransformChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAchievements();
       _warmContactAvatars();
@@ -147,8 +158,23 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     _achievementSub?.close();
     _memoryLayoutSub?.close();
     _graphTabSub?.close();
+    _longPressTimer?.cancel();
+    _cullRefreshTimer?.cancel();
+    _transformController.removeListener(_onTransformChanged);
+    _dragTick.dispose();
     _transformController.dispose();
     super.dispose();
+  }
+
+  void _onTransformChanged() {
+    if (_draggingNode) return;
+    // 팬/줌 중에는 매 프레임 재빌드하지 않고, 멈춘 뒤에만 가시 노드를 갱신
+    _cullRefreshTimer?.cancel();
+    _cullRefreshTimer = Timer(const Duration(milliseconds: 120), () {
+      if (!mounted || _draggingNode) return;
+      _frozenVisibleIds = null;
+      setState(() {});
+    });
   }
 
   @override
@@ -407,6 +433,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
 
   void _beginDrag(Map<String, Offset> positions) {
     _livePositions = Map<String, Offset>.from(positions);
+    _dragTick.value++;
   }
 
   void _applyDragDelta({
@@ -423,6 +450,8 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       final base = _livePositions![primaryNodeId];
       if (base != null) _livePositions![primaryNodeId] = base + delta;
     }
+    // 맵 복사·전체 위젯 재빌드 없이 tick만 통지
+    _dragTick.value++;
   }
 
   void _finishDrag(WidgetRef ref) {
@@ -446,7 +475,35 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     _livePositions = null;
   }
 
+  void _cancelLongPressTimer() {
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
+  }
+
+  void _armLongPressClusterDrag(List<GraphNodeData> nodes) {
+    _cancelLongPressTimer();
+    final nodeId = _dragNodeId;
+    if (nodeId == null) return;
+    GraphNodeData? node;
+    for (final n in nodes) {
+      if (n.id == nodeId) {
+        node = n;
+        break;
+      }
+    }
+    if (node == null || !isGraphHubLikeNode(node)) return;
+
+    _longPressTimer = Timer(const Duration(milliseconds: 380), () {
+      if (!mounted || _dragNodeId != nodeId || _moved) return;
+      _moveCluster = true;
+      HapticFeedback.mediumImpact();
+      // 그룹 하이라이트만 경량 tick으로 반영 (전체 setState 회피)
+      _dragTick.value++;
+    });
+  }
+
   void _resetPointerState() {
+    _cancelLongPressTimer();
     _activePointer = null;
     _dragNodeId = null;
     _dragGroup = {};
@@ -454,6 +511,7 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     _lastCanvasPosition = null;
     _moved = false;
     _draggingNode = false;
+    _livePositions = null;
   }
 
   void _handlePointerDown(
@@ -465,13 +523,14 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     _activePointer = event.pointer;
     _lastCanvasPosition = _transformController.toScene(event.localPosition);
     _moved = false;
+    _moveCluster = false;
     final nodeId = _nodeAt(_lastCanvasPosition!, nodes, positions);
     if (nodeId == null) return;
 
     _dragNodeId = nodeId;
     _dragGroup = dragGroupForNode(nodeId, edges, nodes);
-    _moveCluster = false;
     _beginDrag(positions);
+    _armLongPressClusterDrag(nodes);
     setState(() => _draggingNode = true);
   }
 
@@ -483,10 +542,13 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     final delta = canvasPos - last;
     _lastCanvasPosition = canvasPos;
     if (delta == Offset.zero) return;
-    _moved = true;
-    setState(() {
-      _applyDragDelta(primaryNodeId: _dragNodeId!, delta: delta);
-    });
+    if (!_moved && delta.distance > 2.5) {
+      _moved = true;
+      // 롱프레스 전에 움직이면 단일 노드 드래그
+      if (!_moveCluster) _cancelLongPressTimer();
+    }
+    if (!_moved) return;
+    _applyDragDelta(primaryNodeId: _dragNodeId!, delta: delta);
   }
 
   void _handlePointerEnd(
@@ -617,10 +679,13 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
         }
       } else if (tappedNode != null && mounted) {
         final kind = tappedNode.kind;
-        if (kind == GraphNodeKind.person) {
-          showGraphPersonDetailSheet(context, ref, personName: tappedNode.title);
-        } else if (kind == GraphNodeKind.place ||
-            kind == GraphNodeKind.activity) {
+        if (kind == GraphNodeKind.person ||
+            kind == GraphNodeKind.pet ||
+            kind == GraphNodeKind.place ||
+            kind == GraphNodeKind.activity ||
+            kind == GraphNodeKind.event ||
+            kind == GraphNodeKind.eventHub ||
+            kind == GraphNodeKind.organization) {
           showGraphEntityMediaSheet(
             context,
             ref,
@@ -641,7 +706,306 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       }
     }
     if (_dragNodeId != null) _finishDrag(ref);
-    setState(_resetPointerState);
+    setState(_resetPointerState    );
+  }
+
+  Widget _buildIdleGraphLayer({
+    required Size effectiveCanvas,
+    required List<GraphNodeData> sortedNodes,
+    required Map<String, Offset> anchoredBase,
+    required Map<String, GraphNodeData> nodeMap,
+    required bool isDark,
+    required bool cullNodes,
+    required Size viewportSize,
+    required GraphLayout layout,
+    required Map<String, Memory> memoryById,
+    required Map<String, GraphNodeMediaInfo> nodeMediaIndex,
+    required bool isFocusMode,
+    required bool isMemoryFocusMode,
+    required List<String> highlightedEntities,
+    required String graphSearchQuery,
+    required String? selectedNodeId,
+    required Map<String, GraphSatelliteExpandMode> mergedExpansions,
+    required String localeCode,
+  }) {
+    // 팬/줌은 InteractiveViewer가 처리. 컬링은 프레임마다 하지 않고 고정 집합만 사용.
+    if (cullNodes && _frozenVisibleIds == null) {
+      _frozenVisibleIds = visibleGraphNodeIds(
+        nodes: sortedNodes,
+        positions: anchoredBase,
+        transform: _transformController.value,
+        viewportSize: viewportSize,
+      );
+    }
+    if (!cullNodes) _frozenVisibleIds = null;
+
+    return _buildGraphStack(
+      effectiveCanvas: effectiveCanvas,
+      sortedNodes: sortedNodes,
+      positions: anchoredBase,
+      nodeMap: nodeMap,
+      isDark: isDark,
+      visibleIds: _frozenVisibleIds,
+      cullNodes: cullNodes,
+      layout: layout,
+      memoryById: memoryById,
+      nodeMediaIndex: nodeMediaIndex,
+      isFocusMode: isFocusMode,
+      isMemoryFocusMode: isMemoryFocusMode,
+      highlightedEntities: highlightedEntities,
+      graphSearchQuery: graphSearchQuery,
+      selectedNodeId: selectedNodeId,
+      mergedExpansions: mergedExpansions,
+      localeCode: localeCode,
+      declutter: sortedNodes.length > 28,
+      hideLabels: false,
+    );
+  }
+
+  Widget _buildGraphStack({
+    required Size effectiveCanvas,
+    required List<GraphNodeData> sortedNodes,
+    required Map<String, Offset> positions,
+    required Map<String, GraphNodeData> nodeMap,
+    required bool isDark,
+    required Set<String>? visibleIds,
+    required bool cullNodes,
+    required GraphLayout layout,
+    required Map<String, Memory> memoryById,
+    required Map<String, GraphNodeMediaInfo> nodeMediaIndex,
+    required bool isFocusMode,
+    required bool isMemoryFocusMode,
+    required List<String> highlightedEntities,
+    required String graphSearchQuery,
+    required String? selectedNodeId,
+    required Map<String, GraphSatelliteExpandMode> mergedExpansions,
+    required String localeCode,
+    required bool declutter,
+    required bool hideLabels,
+  }) {
+    final nodesToRender = cullNodes && visibleIds != null
+        ? sortedNodes.where((n) => visibleIds.contains(n.id))
+        : sortedNodes;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        CustomPaint(
+          size: effectiveCanvas,
+          painter: GraphEdgesPainter(
+            edges: layout.edges,
+            positions: positions,
+            nodeMap: nodeMap,
+            isDark: isDark,
+            visibleNodeIds: visibleIds,
+            declutter: declutter,
+            hideLabels: hideLabels,
+          ),
+        ),
+        ...nodesToRender.map((node) {
+          final position = positions[node.id]!;
+          final entityName = node.isMemory ? null : node.title;
+          final linkedMemory = node.id.startsWith('memory_')
+              ? memoryById[node.id.replaceFirst('memory_', '')]
+              : null;
+          final isHighlighted = isFocusMode
+              ? (isMemoryFocusMode ||
+                  node.id.startsWith('focus_hub_') ||
+                  node.isMemory)
+              : node.isMemory
+                  ? linkedMemory != null && memoryMatchesAnyEntity(linkedMemory, highlightedEntities)
+                  : highlightedEntities.contains(entityName) || highlightedEntities.contains(node.title);
+          final matchesGraphSearch = graphSearchQuery.isEmpty ||
+              node.title.toLowerCase().contains(graphSearchQuery) ||
+              node.placeLabel.toLowerCase().contains(graphSearchQuery) ||
+              node.subtitle.toLowerCase().contains(graphSearchQuery);
+          final isDimmed = graphSearchQuery.isNotEmpty && !matchesGraphSearch;
+          final showHighlight = isHighlighted || (graphSearchQuery.isNotEmpty && matchesGraphSearch);
+          final isSelected = selectedNodeId == node.id;
+          final isDragging = _draggingNode && (_moveCluster ? _dragGroup.contains(node.id) : node.id == _dragNodeId);
+
+          final media = nodeMediaIndex[node.id] ?? GraphNodeMediaInfo.empty;
+          final thumbPath = media.thumbnailPath;
+          final photoCount = media.photoCount;
+          final showVideoBadge = media.hasVideo;
+
+          final memoryId = node.id.startsWith('memory_') ? node.id.replaceFirst('memory_', '') : null;
+          final satellitesExpanded =
+              memoryId != null && mergedExpansions.containsKey(memoryId);
+
+          return Positioned(
+            key: ValueKey('${node.id}_${thumbPath ?? ''}'),
+            left: position.dx - node.size.width / 2,
+            top: position.dy - node.size.height / 2,
+            child: Opacity(
+              opacity: isDimmed ? 0.28 : 1,
+              child: Semantics(
+                label: node.title,
+                hint: node.satelliteBadge,
+                button: true,
+                child: _GraphNodeCard(
+                  node: node,
+                  isHighlighted: showHighlight,
+                  isSelected: isSelected,
+                  isDragging: isDragging,
+                  isDark: isDark,
+                  thumbnailPath: thumbPath,
+                  photoCount: photoCount,
+                  showVideoBadge: showVideoBadge,
+                  satelliteBadge: node.satelliteBadge,
+                  satellitesExpanded: satellitesExpanded,
+                  localeCode: localeCode,
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  void _handleGraphNodeTap({
+    required WidgetRef ref,
+    required String nodeId,
+    required Offset canvasPos,
+    required List<Memory> memories,
+    required Map<String, List<String>> imagePaths,
+    required Map<String, List<String>> videoPaths,
+    required List<GraphNodeData> nodes,
+    required List<GraphEdgeData> edges,
+    required Map<String, Offset> positions,
+  }) {
+    ref.read(selectedGraphNodeProvider.notifier).state = nodeId;
+    final localeCode = ref.read(languageProvider).languageCode;
+    final graphAiOn = isGraphAiActive(
+      prefs: ref.read(preferencesProvider),
+      graphAiEnabled: ref.read(graphAiEnabledProvider),
+      privacyMode: ref.read(privacyLocalModeProvider),
+      guestMode: isLocalOnlyMode(
+        ref.read(preferencesProvider),
+        privacyMode: ref.read(privacyLocalModeProvider),
+        guestMode: ref.read(guestModeProvider),
+      ),
+      subscription: ref.read(subscriptionStatusProvider),
+    );
+    final fragments =
+        graphAiOn ? ref.read(memoryGraphFragmentsProvider) : const <String, GraphMemoryFragment>{};
+    GraphNodeData? tappedNode;
+    for (final n in nodes) {
+      if (n.id == nodeId) {
+        tappedNode = n;
+        break;
+      }
+    }
+    if (tappedNode == null || !mounted) return;
+
+    final cid = tappedNode.layoutClusterId;
+    if (_collapsedClusterIds.contains(cid) && _isClusterHubNode(tappedNode)) {
+      GraphSatelliteExpandMode? railMode;
+      if (nodeId.startsWith('memory_')) {
+        final badge = tappedNode.satelliteBadge;
+        final center = positions[nodeId];
+        if (badge != null && badge.isNotEmpty && center != null) {
+          railMode = satelliteModeFromRailTap(
+            canvasPos: canvasPos,
+            nodeCenter: center,
+            nodeSize: tappedNode.size,
+            badgeText: badge,
+            localeCode: localeCode,
+          );
+        }
+      }
+      setState(() {
+        _collapsedClusterIds.remove(cid);
+        _layoutFingerprint = null;
+        _cachedLayout = null;
+      });
+      if (railMode != null && nodeId.startsWith('memory_')) {
+        _toggleSatelliteExpansion(
+          nodeId.replaceFirst('memory_', ''),
+          railMode,
+          memories: memories,
+          fragments: fragments,
+          localeCode: localeCode,
+        );
+      }
+      return;
+    }
+
+    if (nodeId.startsWith('memory_')) {
+      final memoryId = nodeId.replaceFirst('memory_', '');
+      final badge = tappedNode.satelliteBadge;
+      final center = positions[nodeId];
+      if (badge != null && badge.isNotEmpty && center != null) {
+        final badgeMode = satelliteModeFromRailTap(
+          canvasPos: canvasPos,
+          nodeCenter: center,
+          nodeSize: tappedNode.size,
+          badgeText: badge,
+          localeCode: localeCode,
+        );
+        if (badgeMode != null) {
+          _toggleSatelliteExpansion(
+            memoryId,
+            badgeMode,
+            memories: memories,
+            fragments: fragments,
+            localeCode: localeCode,
+          );
+          return;
+        }
+      }
+      showGraphNodeAiSheet(
+        context,
+        ref,
+        node: tappedNode,
+        edges: edges,
+        imagePaths: imagePaths,
+        videoPaths: videoPaths,
+        onSaved: _graphChatSavedHandler,
+      );
+      return;
+    }
+
+    if (nodeId.startsWith('group_') ||
+        nodeId.startsWith('focus_hub_') ||
+        nodeId.startsWith('event_hub_')) {
+      showGraphNodeAiSheet(
+        context,
+        ref,
+        node: tappedNode,
+        edges: edges,
+        imagePaths: imagePaths,
+        videoPaths: videoPaths,
+        onSaved: _graphChatSavedHandler,
+      );
+      return;
+    }
+
+    final kind = tappedNode.kind;
+    if (kind == GraphNodeKind.person ||
+        kind == GraphNodeKind.pet ||
+        kind == GraphNodeKind.place ||
+        kind == GraphNodeKind.activity ||
+        kind == GraphNodeKind.event ||
+        kind == GraphNodeKind.eventHub ||
+        kind == GraphNodeKind.organization) {
+      showGraphEntityMediaSheet(
+        context,
+        ref,
+        node: tappedNode,
+        imagePaths: imagePaths,
+      );
+    } else {
+      showGraphNodeAiSheet(
+        context,
+        ref,
+        node: tappedNode,
+        edges: edges,
+        imagePaths: imagePaths,
+        videoPaths: videoPaths,
+        onSaved: _graphChatSavedHandler,
+      );
+    }
   }
 
   @override
@@ -811,18 +1175,28 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     KeywordFocusGraphResult? focusResult;
     MemoryFocusGraphResult? memoryFocusResult;
     final keyword = focusKeyword?.trim() ?? '';
-    final mergedExpansions = isFocusMode
-        ? const <String, GraphSatelliteExpandMode>{}
-        : mergeDefaultSatelliteExpansions(
-            memories: layoutMemories,
-            userExpansions: _satelliteExpansions,
-            collapsedMemoryIds: _collapsedSatelliteMemoryIds,
-            graphFragments: fragments,
-            localeCode: localeCode,
-          );
     final memoryKey = graphMemoryLayoutSignature(layoutMemories);
-    final expansionKey = mergedExpansions.entries.map((e) => '${e.key}:${e.value.name}').join('|');
     final collapseKey = _collapsedSatelliteMemoryIds.join(',');
+    final expansionFingerprint =
+        '$memoryKey:$collapseKey:$localeCode:${_satelliteExpansions.entries.map((e) => '${e.key}:${e.value.name}').join('|')}';
+    late final Map<String, GraphSatelliteExpandMode> mergedExpansions;
+    if (isFocusMode) {
+      mergedExpansions = const <String, GraphSatelliteExpandMode>{};
+    } else if (_cachedExpansionFingerprint == expansionFingerprint &&
+        _cachedMergedExpansions != null) {
+      mergedExpansions = _cachedMergedExpansions!;
+    } else {
+      mergedExpansions = mergeDefaultSatelliteExpansions(
+        memories: layoutMemories,
+        userExpansions: _satelliteExpansions,
+        collapsedMemoryIds: _collapsedSatelliteMemoryIds,
+        graphFragments: fragments,
+        localeCode: localeCode,
+      );
+      _cachedExpansionFingerprint = expansionFingerprint;
+      _cachedMergedExpansions = mergedExpansions;
+    }
+    final expansionKey = mergedExpansions.entries.map((e) => '${e.key}:${e.value.name}').join('|');
     final fragmentKey = fragments.entries.map((e) => '${e.key}:${e.value.meaningTitle}').join('|');
     final fingerprint = isMemoryFocusMode
         ? 'memfocus:${focusMemoryId!.trim()}:$memoryKey:$localeCode:$fragmentKey'
@@ -865,18 +1239,33 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
           ),
         );
       }
-      memoryFocusResult = buildMemoryFocusGraphLayout(
-        focusMemory,
-        placeCache: placeCache,
-        fullAddressCache: fullAddressCache,
-        graphFragments: fragments,
-        localeCode: localeCode,
-        photoCountFor: (id) => imageCountForMemoryId(id, imagePaths),
-        hasVideoFor: (id) => memoryHasVideo(id, videoPaths),
-      );
-      layout = memoryFocusResult.layout;
-      canvasSize = memoryFocusCanvasSize(layout.nodes.length);
-      defaults = initialGraphPositions(layout.nodes, layout.edges, canvasSize);
+      if (memoriesHaveOrganizationHierarchy([focusMemory], localeCode: localeCode)) {
+        layout = buildEventGraphLayout(
+          [focusMemory],
+          placeCache: placeCache,
+          fullAddressCache: fullAddressCache,
+          graphFragments: fragments,
+          localeCode: localeCode,
+        );
+        final eventCount = layout.nodes.where((n) => n.kind == GraphNodeKind.eventHub).length;
+        final hierarchyCount = layout.nodes.where((n) => n.hubDepth != null).length;
+        canvasSize = eventGraphCanvasSize(eventCount, hierarchyNodeCount: hierarchyCount);
+        defaults = initialEventGraphPositions(layout.nodes, layout.edges, canvasSize);
+        memoryFocusResult = null;
+      } else {
+        memoryFocusResult = buildMemoryFocusGraphLayout(
+          focusMemory,
+          placeCache: placeCache,
+          fullAddressCache: fullAddressCache,
+          graphFragments: fragments,
+          localeCode: localeCode,
+          photoCountFor: (id) => imageCountForMemoryId(id, imagePaths),
+          hasVideoFor: (id) => memoryHasVideo(id, videoPaths),
+        );
+        layout = memoryFocusResult.layout;
+        canvasSize = memoryFocusCanvasSize(layout.nodes.length);
+        defaults = initialGraphPositions(layout.nodes, layout.edges, canvasSize);
+      }
       _layoutFingerprint = fingerprint;
       _cachedLayout = layout;
       _cachedCanvasSize = canvasSize;
@@ -912,7 +1301,10 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
       _cachedDefaults = defaults;
       _cachedFocusResult = null;
       _cachedMemoryFocusResult = null;
-    } else if (hubViewMode == GraphHubViewMode.eventHub) {
+    } else if (hubViewMode == GraphHubViewMode.eventHub ||
+        memoriesHaveOrganizationHierarchy(layoutMemories, localeCode: localeCode)) {
+      // 기업 조직 계층은 이벤트 레이아웃의 depth tree에서만 완전 렌더된다.
+      // 기본(기억 허브)에서도 조직도가 보이도록 자동으로 이벤트 레이아웃을 쓴다.
       layout = buildEventGraphLayout(
         layoutMemories,
         placeCache: placeCache,
@@ -921,7 +1313,8 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
         localeCode: localeCode,
       );
       final eventCount = layout.nodes.where((n) => n.kind == GraphNodeKind.eventHub).length;
-      canvasSize = eventGraphCanvasSize(eventCount);
+      final hierarchyCount = layout.nodes.where((n) => n.hubDepth != null).length;
+      canvasSize = eventGraphCanvasSize(eventCount, hierarchyNodeCount: hierarchyCount);
       defaults = initialEventGraphPositions(layout.nodes, layout.edges, canvasSize);
       _layoutFingerprint = fingerprint;
       _cachedLayout = layout;
@@ -981,12 +1374,24 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
 
     final displayMode = ref.watch(graphDisplayModeProvider);
     final nodeMap = {for (final node in layout.nodes) node.id: node};
-    final basePositions = <String, Offset>{};
     final center = Offset(canvasSize.width / 2, canvasSize.height / 2);
-    for (final node in layout.nodes) {
-      basePositions[node.id] = isFocusMode
-          ? (_focusDragPositions[node.id] ?? defaults[node.id] ?? center)
-          : (storedPositions[node.id] ?? defaults[node.id] ?? center);
+    final Map<String, Offset> basePositions;
+    if (isFocusMode) {
+      basePositions = mergeStoredGraphPositions(
+        nodes: layout.nodes,
+        edges: layout.edges,
+        defaults: defaults,
+        stored: _focusDragPositions,
+        fallback: center,
+      );
+    } else {
+      basePositions = mergeStoredGraphPositions(
+        nodes: layout.nodes,
+        edges: layout.edges,
+        defaults: defaults,
+        stored: storedPositions,
+        fallback: center,
+      );
     }
 
     int paintOrder(GraphNodeData node) {
@@ -999,11 +1404,10 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
 
     final sortedNodes = [...layout.nodes]..sort((a, b) => paintOrder(a).compareTo(paintOrder(b)));
 
-    var positions = Map<String, Offset>.from(_livePositions ?? basePositions);
     var effectiveCanvas = canvasSize;
-    final contentBounds = graphContentBounds(sortedNodes, positions);
+    final contentBounds = graphContentBounds(sortedNodes, basePositions);
     effectiveCanvas = expandCanvasForContent(effectiveCanvas, contentBounds);
-    positions = shiftPositionsIntoCanvas(positions, contentBounds, effectiveCanvas);
+    final anchoredBase = shiftPositionsIntoCanvas(basePositions, contentBounds, effectiveCanvas);
 
     final memoryById = {for (final m in visibleMemories) m.id: m};
     final nodeMediaIndex = buildGraphNodeMediaIndex(
@@ -1023,135 +1427,100 @@ class _RelationshipGraphScreenState extends ConsumerState<RelationshipGraphScree
     final graphCanvas = Stack(
       clipBehavior: Clip.none,
       children: [
-        Listener(
-          behavior: HitTestBehavior.translucent,
-          onPointerDown: (event) => _handlePointerDown(event, layout.nodes, layout.edges, positions),
-          onPointerMove: _handlePointerMove,
-          onPointerUp: (event) =>
-              _handlePointerEnd(event, ref, visibleMemories, imagePaths, videoPaths, layout.nodes, layout.edges, positions),
-          onPointerCancel: (event) =>
-              _handlePointerEnd(event, ref, visibleMemories, imagePaths, videoPaths, layout.nodes, layout.edges, positions),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
-              final cullNodes = !isFocusMode && sortedNodes.length > 24;
-              if (_lastFitFingerprint != fingerprint) {
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  fitGraphToViewport(
-                    controller: _transformController,
-                    contentBounds: graphContentBounds(sortedNodes, positions),
-                    viewportSize: viewportSize,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final viewportSize = Size(constraints.maxWidth, constraints.maxHeight);
+            if (_lastFitFingerprint != fingerprint) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                fitGraphToViewport(
+                  controller: _transformController,
+                  contentBounds: graphContentBounds(sortedNodes, anchoredBase),
+                  viewportSize: viewportSize,
+                );
+                _lastFitFingerprint = fingerprint;
+              });
+            }
+            return GraphInteractiveCanvas(
+              canvasSize: effectiveCanvas,
+              nodes: sortedNodes,
+              edges: layout.edges,
+              basePositions: anchoredBase,
+              nodeMap: nodeMap,
+              isDark: isDark,
+              transformationController: _transformController,
+              memoryById: memoryById,
+              nodeMediaIndex: nodeMediaIndex,
+              isFocusMode: isFocusMode,
+              isMemoryFocusMode: isMemoryFocusMode,
+              highlightedEntities: highlightedEntities,
+              graphSearchQuery: graphSearchQuery,
+              selectedNodeId: selectedNodeId,
+              mergedExpansions: mergedExpansions,
+              localeCode: localeCode,
+              onDragEnd: (positions) {
+                final focusMemoryId = ref.read(graphFocusMemoryIdProvider)?.trim();
+                final focusKeyword = ref.read(graphFocusKeywordProvider)?.trim();
+                if ((focusMemoryId != null && focusMemoryId.isNotEmpty) ||
+                    (focusKeyword != null && focusKeyword.isNotEmpty)) {
+                  setState(() {
+                    _focusDragPositions = {..._focusDragPositions, ...positions};
+                  });
+                } else {
+                  ref.read(graphNodePositionsProvider.notifier).state = {
+                    ...ref.read(graphNodePositionsProvider),
+                    ...positions,
+                  };
+                  saveGraphPositions(
+                    ref.read(preferencesProvider),
+                    ref.read(graphNodePositionsProvider),
                   );
-                  _lastFitFingerprint = fingerprint;
-                });
-              }
-              return InteractiveViewer(
-            transformationController: _transformController,
-            constrained: false,
-            boundaryMargin: const EdgeInsets.all(double.infinity),
-            minScale: 0.02,
-            maxScale: 5.0,
-            panEnabled: !_draggingNode,
-            scaleEnabled: !_draggingNode,
-            child: RepaintBoundary(
-              child: SizedBox(
-              width: effectiveCanvas.width,
-              height: effectiveCanvas.height,
-              child: ValueListenableBuilder<Matrix4>(
-                valueListenable: _transformController,
-                builder: (context, matrix, _) {
-                  final visibleIds = cullNodes
-                      ? visibleGraphNodeIds(
-                          nodes: sortedNodes,
-                          positions: positions,
-                          transform: matrix,
-                          viewportSize: viewportSize,
-                        )
-                      : null;
-                  final nodesToRender = cullNodes
-                      ? sortedNodes.where((n) => visibleIds!.contains(n.id))
-                      : sortedNodes;
-                  return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  CustomPaint(
-                    size: effectiveCanvas,
-                    painter: GraphEdgesPainter(
-                      edges: layout.edges,
-                      positions: positions,
-                      nodeMap: nodeMap,
-                      isDark: isDark,
-                      visibleNodeIds: visibleIds,
-                    ),
+                }
+              },
+              onTapNode: (nodeId, canvasPos) {
+                _handleGraphNodeTap(
+                  ref: ref,
+                  nodeId: nodeId,
+                  canvasPos: canvasPos,
+                  memories: visibleMemories,
+                  imagePaths: imagePaths,
+                  videoPaths: videoPaths,
+                  nodes: layout.nodes,
+                  edges: layout.edges,
+                  positions: anchoredBase,
+                );
+              },
+              buildNodeCard: ({
+                required node,
+                required isHighlighted,
+                required isSelected,
+                required isDragging,
+                required thumbnailPath,
+                required photoCount,
+                required showVideoBadge,
+                required satellitesExpanded,
+              }) {
+                return Semantics(
+                  label: node.title,
+                  hint: node.satelliteBadge,
+                  button: true,
+                  child: _GraphNodeCard(
+                    node: node,
+                    isHighlighted: isHighlighted,
+                    isSelected: isSelected,
+                    isDragging: isDragging,
+                    isDark: isDark,
+                    thumbnailPath: thumbnailPath,
+                    photoCount: photoCount,
+                    showVideoBadge: showVideoBadge,
+                    satelliteBadge: node.satelliteBadge,
+                    satellitesExpanded: satellitesExpanded,
+                    localeCode: localeCode,
                   ),
-                  ...nodesToRender.map((node) {
-                    final position = positions[node.id]!;
-                    final entityName = node.isMemory ? null : node.title;
-                    final linkedMemory = node.id.startsWith('memory_')
-                        ? memoryById[node.id.replaceFirst('memory_', '')]
-                        : null;
-                    final isHighlighted = isFocusMode
-                        ? (isMemoryFocusMode ||
-                            node.id.startsWith('focus_hub_') ||
-                            node.isMemory)
-                        : node.isMemory
-                            ? linkedMemory != null && memoryMatchesAnyEntity(linkedMemory, highlightedEntities)
-                            : highlightedEntities.contains(entityName) || highlightedEntities.contains(node.title);
-                    final matchesGraphSearch = graphSearchQuery.isEmpty ||
-                        node.title.toLowerCase().contains(graphSearchQuery) ||
-                        node.placeLabel.toLowerCase().contains(graphSearchQuery) ||
-                        node.subtitle.toLowerCase().contains(graphSearchQuery);
-                    final isDimmed = graphSearchQuery.isNotEmpty && !matchesGraphSearch;
-                    final showHighlight = isHighlighted || (graphSearchQuery.isNotEmpty && matchesGraphSearch);
-                    final isSelected = selectedNodeId == node.id;
-                    final isDragging = _draggingNode && _dragGroup.contains(node.id);
-
-                    final media = nodeMediaIndex[node.id] ?? GraphNodeMediaInfo.empty;
-                    final thumbPath = media.thumbnailPath;
-                    final photoCount = media.photoCount;
-                    final showVideoBadge = media.hasVideo;
-
-                    final memoryId = node.id.startsWith('memory_') ? node.id.replaceFirst('memory_', '') : null;
-                    final satellitesExpanded =
-                        memoryId != null && mergedExpansions.containsKey(memoryId);
-
-                    return Positioned(
-                      key: ValueKey('${node.id}_${thumbPath ?? ''}'),
-                      left: position.dx - node.size.width / 2,
-                      top: position.dy - node.size.height / 2,
-                      child: Opacity(
-                        opacity: isDimmed ? 0.28 : 1,
-                        child: Semantics(
-                          label: node.title,
-                          hint: node.satelliteBadge,
-                          button: true,
-                          child: _GraphNodeCard(
-                            node: node,
-                            isHighlighted: showHighlight,
-                            isSelected: isSelected,
-                            isDragging: isDragging,
-                            isDark: isDark,
-                            thumbnailPath: thumbPath,
-                            photoCount: photoCount,
-                            showVideoBadge: showVideoBadge,
-                            satelliteBadge: node.satelliteBadge,
-                            satellitesExpanded: satellitesExpanded,
-                            localeCode: localeCode,
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                ],
-              );
-                },
-              ),
-            ),
-            ),
-          );
-            },
-          ),
+                );
+              },
+            );
+          },
         ),
         if (!landscapeImmersive && !isFocusMode && _satelliteExpansions.isNotEmpty)
           Positioned(
@@ -1768,8 +2137,7 @@ class _GraphNodeCard extends StatelessWidget {
               decoration: decoration,
               child: _buildNodeBody(context, hasThumb: hasThumb, accent: accent),
             )
-          : AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
+          : Container(
         width: node.size.width,
         height: node.size.height,
         clipBehavior: Clip.antiAlias,

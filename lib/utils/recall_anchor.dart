@@ -1,13 +1,14 @@
 import 'dart:math' as math;
 
 import '../models/memory.dart';
+import 'memory_entity_cache.dart';
 import 'korean_person_names.dart';
 import 'memory_entity_extract.dart';
 import 'photo_memory_format.dart';
 
 /// 기억 본문·엔티티에서 회상 앵커로 쓸 장소명을 고릅니다.
 String? primaryStoryPlaceLabel(Memory memory, {String localeCode = 'ko'}) {
-  final bundle = extractMemoryEntities(memory, localeCode: localeCode);
+  final bundle = MemoryEntityCache.bundle(memory, localeCode: localeCode);
   String? best;
   var bestScore = 0;
   void consider(String? raw) {

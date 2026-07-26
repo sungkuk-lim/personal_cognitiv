@@ -8,7 +8,10 @@ import '../core/replay_config.dart';
 import '../models/graph_ai_snapshot.dart';
 import '../l10n/translations.dart';
 import '../core/graph_hub_config.dart';
+import '../core/graph_display_mode.dart';
+import '../core/graph_view_lens.dart';
 import '../utils/graph_time_filter.dart';
+import '../utils/graph_context_lens.dart';
 
 final searchQueryProvider = StateProvider<String>((ref) => "");
 final highlightedEntitiesProvider = StateProvider<List<String>>((ref) => []);
@@ -22,7 +25,7 @@ final graphFocusKeywordProvider = StateProvider<String?>((ref) => null);
 final graphFocusMemoryIdProvider = StateProvider<String?>((ref) => null);
 /// 하단 탭 인덱스 (0 타임라인, 1 검색, 2 관계망, 3 회상).
 final mainNavigationTabProvider = StateProvider<int>((ref) => 0);
-final proactiveRecallEnabledProvider = StateProvider<bool>((ref) => true);
+final proactiveRecallEnabledProvider = StateProvider<bool>((ref) => false);
 final memoryPulseEnabledProvider = StateProvider<bool>((ref) => true);
 
 final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.system);
@@ -44,6 +47,10 @@ final privacyLocalModeProvider = StateProvider<bool>((ref) => false);
 final guestModeProvider = StateProvider<bool>((ref) => false);
 final graphTimeRangeProvider = StateProvider<GraphTimeRange>((ref) => GraphTimeRange.days7);
 final graphHubViewModeProvider = StateProvider<GraphHubViewMode>((ref) => GraphHubViewMode.memoryHub);
+final graphViewLensProvider = StateProvider<GraphViewLens>((ref) => GraphViewLens.memory);
+final graphDisplayModeProvider = StateProvider<GraphDisplayMode>((ref) => GraphDisplayMode.canvas);
+final appLockRevisionProvider = StateProvider<int>((ref) => 0);
+final graphContextLensProvider = StateProvider<GraphContextLens>((ref) => GraphContextLens.all);
 final contactPersonAvatarsEnabledProvider = StateProvider<bool>((ref) => true);
 /// 관계망 내 엔티티·노드 제목 필터.
 final graphEntitySearchProvider = StateProvider<String>((ref) => '');

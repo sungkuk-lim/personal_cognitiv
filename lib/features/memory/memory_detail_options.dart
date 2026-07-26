@@ -29,4 +29,6 @@ class MemoryDetailOptions {
   bool get allowDeleteVideo => presentation == MemoryDetailPresentation.full;
   bool get isLight => presentation == MemoryDetailPresentation.replayLight;
   bool get isEditable => presentation == MemoryDetailPresentation.full;
+  bool get showRelationshipTags => presentation == MemoryDetailPresentation.full;
+  bool get allowEntityEdit => presentation == MemoryDetailPresentation.full;
 }

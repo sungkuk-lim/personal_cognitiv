@@ -86,11 +86,13 @@ copy android\key.properties.example android\key.properties
 # 2. Firebase
 .\scripts\setup_firebase.ps1
 
-# 3. 릴리스 APK
-.\scripts\build_release.ps1
+# 3. 릴리스 AAB (권장 · Play)
+.\scripts\build_bundle.ps1
+# 또는 APK: .\scripts\build_release.ps1
 ```
 
-출력: `build/app/outputs/flutter-apk/app-release.apk`
+출력: `build/app/outputs/bundle/release/app-release.aab`  
+현재 준비 버전: **1.0.6+9** (2026-07-25) — Play API로 번들 업로드까지 완료, 트랙 **commit**은 서비스 계정 권한 부족 시 콘솔에서 수동 저장
 
 ## 완성도 (2026-07 기준)
 
@@ -98,7 +100,7 @@ copy android\key.properties.example android\key.properties
 |------|------|
 | 핵심 기능 | **~95%** |
 | UX·안정성 | ~94% |
-| 단위 테스트 | **281건+ 통과** |
+| 단위 테스트 | **360건+ 통과** |
 | Firebase Crashlytics | **연동 완료** |
 | 릴리스 APK 서명 | **완료** |
 | 개인정보·이용약관 | **앱 내 뷰어** |

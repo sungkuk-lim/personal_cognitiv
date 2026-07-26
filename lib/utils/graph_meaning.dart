@@ -1,17 +1,34 @@
-import 'memory_detail_text.dart';
-import 'memory_entity_extract.dart';
+import '../features/graph/graph_chat_save.dart';
 import '../models/memory.dart';
-import 'memory_entity_extract.dart';
+import 'memory_detail_text.dart';
 import 'graph_meaning_extract.dart';
+import 'memory_entity_extract.dart';
 import 'ocr_utils.dart';
 
 /// 관계망 제목 — 그날·그 순간의 핵심 의미를 한 문장으로 표현합니다.
 String graphMeaningSentence(Memory memory, {required String localeCode}) {
   final bundle = extractMemoryEntities(memory, localeCode: localeCode);
   final hub = bundle.eventTitle.trim();
+
+  if (hub.isNotEmpty && isChipStyleHubTitle(hub)) {
+    final line = extractBestMeaningLineForGraph(memory.content, localeCode: localeCode);
+    if (line.isNotEmpty && !_isGenericMeaningFallback(line, localeCode)) {
+      return _truncateMeaning(line, 58);
+    }
+  }
+
   if (hub.isNotEmpty &&
       isMeaningfulHubTitle(hub, localeCode: localeCode) &&
       !_shouldPreferIncidentMeaningOverHubTitle(memory.content, hub)) {
+    // 「저녁 먹음」처럼 압축된 허브보다, 짧은 한 문장 원문을 우선합니다.
+    final contentLine = _firstMeaningfulContentLine(memory.content);
+    if (contentLine != null &&
+        !memoryTextHasMultipleClauses(memory.content) &&
+        contentLine.length <= 48 &&
+        hub.replaceAll(RegExp(r'[.!?…]+$'), '').length + 3 < contentLine.length &&
+        !hub.contains('·')) {
+      return _truncateMeaning(_polishMeaningSentence(contentLine, localeCode), 58);
+    }
     return _truncateMeaning(hub, 58);
   }
 
@@ -43,6 +60,15 @@ String graphMeaningSentence(Memory memory, {required String localeCode}) {
   }
 
   return _truncateMeaning(_synthesizeMeaningFromSignals(memory, localeCode), 58);
+}
+
+/// 타임라인·회상·검색 카드에 쓰는 통일 제목.
+String memoryDisplayTitle(Memory memory, {required String localeCode}) {
+  if (isGraphNoteMemory(memory)) {
+    final fact = graphNoteFactTitle(memory);
+    if (fact.isNotEmpty) return fact;
+  }
+  return graphMeaningSentence(memory, localeCode: localeCode);
 }
 
 /// 같은 날·같은 장소 묶음 허브 제목.

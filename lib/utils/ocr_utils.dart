@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../l10n/app_locales.dart';
 import '../models/memory.dart';
 
 String? formatMemoryLatLng(double? lat, double? lng) {
@@ -159,14 +160,17 @@ bool isJunkOcrMetaResponse(String text) {
   return false;
 }
 
-/// 그래프·타임라인에 노출하지 않는 내부 태그 (rel:, event:, tag: 등).
+/// 그래프·타임라인에 노출하지 않는 내부 태그 (rel:, event:, tag:, count: 등).
 bool isInternalMemoryEntityTag(String entity) {
   final e = entity.trim();
   return e.startsWith('tag:') ||
       e.startsWith('rel:') ||
       e.startsWith('event:') ||
       e.startsWith('time:') ||
-      e.startsWith('importance:');
+      e.startsWith('importance:') ||
+      e.startsWith('count:') ||
+      e.startsWith('flow:count:') ||
+      e.startsWith('flow:');
 }
 
 List<String> sanitizeEntities(List<String> entities) {
@@ -262,11 +266,27 @@ String localizedCategoryLabel(Map<String, String> t, String category) {
 }
 
 String languageNameForLocale(Locale locale) {
-  switch (locale.languageCode) {
+  switch (localeIdFromLocale(locale)) {
     case 'ko':
       return 'Korean';
     case 'en':
       return 'English';
+    case 'ja':
+      return 'Japanese';
+    case 'zh_Hans':
+      return 'Simplified Chinese';
+    case 'zh_Hant':
+      return 'Traditional Chinese';
+    case 'es':
+      return 'Spanish';
+    case 'fr':
+      return 'French';
+    case 'de':
+      return 'German';
+    case 'pt_BR':
+      return 'Brazilian Portuguese';
+    case 'vi':
+      return 'Vietnamese';
     default:
       return 'the same language as the user input';
   }

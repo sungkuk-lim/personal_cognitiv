@@ -9,6 +9,12 @@ void main() {
     expect(extractPlaceHintFromOcr('경주 월영교 야경'), '경주 월영교');
   });
 
+  test('extractPlaceHintFromOcr does not treat person names as places', () {
+    expect(extractPlaceHintFromOcr('정준호 환자 치과'), isNot(equals('정준호')));
+    expect(extractPlaceHintFromOcr('이기동 환자는 치과로'), isNot(equals('이기동')));
+    expect(extractPlaceHintFromOcr('김명희 안과 진료'), isNot(equals('김명희')));
+  });
+
   test('buildPhotoDisplayTitle includes place and time', () {
     final title = buildPhotoDisplayTitle(
       placeLabel: '월영교',

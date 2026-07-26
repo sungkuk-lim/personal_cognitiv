@@ -28,7 +28,8 @@ https://thenext-modamnet.github.io/personal_cognitiv/privacy.html
 https://thenext-modamnet.github.io/personal_cognitiv/terms.html
 ```
 
-앱 코드 기본값: `lib/core/app_urls.dart` (이전 완료 후 자동 일치)
+앱 코드 기본값: `lib/core/app_urls.dart` — **소프트 런치 중에는 라이브 URL(`sungkuk-lim`)과 동일**.
+조직 이전 후 `app_urls.dart` 또는 `--dart-define=PRIVACY_POLICY_URL=...` 로 교체.
 
 ---
 

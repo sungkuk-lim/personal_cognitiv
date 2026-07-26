@@ -109,6 +109,43 @@ class SettingsPlanOverviewCard extends ConsumerWidget {
   }
 }
 
+class _RequirementRow extends StatelessWidget {
+  const _RequirementRow({required this.label, required this.met});
+
+  final String label;
+  final bool met;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final color = met ? Colors.green.shade600 : theme.colorScheme.onSurfaceVariant;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        children: [
+          Icon(
+            met ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+            size: 18,
+            color: color,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.3,
+                color: met ? theme.colorScheme.onSurface : theme.colorScheme.onSurfaceVariant,
+                fontWeight: met ? FontWeight.w600 : FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TierRow extends StatelessWidget {
   const _TierRow({
     required this.label,
@@ -165,14 +202,21 @@ class SettingsGraphAiStatusCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = ref.watch(translationsProvider);
     final theme = Theme.of(context);
+    final privacyMode = ref.watch(privacyLocalModeProvider);
+    final guestMode = ref.watch(guestModeProvider);
+    final isPro = ref.watch(hasProEntitlementProvider);
     final localOnly = isLocalOnlyMode(
       ref.watch(preferencesProvider),
-      privacyMode: ref.watch(privacyLocalModeProvider),
-      guestMode: ref.watch(guestModeProvider),
+      privacyMode: privacyMode,
+      guestMode: guestMode,
     );
     final graphAiLocked = localOnly ||
-        (requiresProCloudForGraphAi && (!AppEnv.isConfigured || !ref.watch(hasProEntitlementProvider)));
+        (requiresProCloudForGraphAi && (!AppEnv.isConfigured || !isPro));
     final enabled = !graphAiLocked && ref.watch(graphAiEnabledProvider);
+
+    final privacyOk = !privacyMode && !readPrivacyLocalMode(ref.watch(preferencesProvider));
+    final loginOk = !guestMode && AppEnv.isConfigured;
+    final proOk = isPro || !requiresProCloudForGraphAi;
 
     String statusText;
     IconData statusIcon;
@@ -217,7 +261,26 @@ class SettingsGraphAiStatusCard extends ConsumerWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.surface.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: theme.colorScheme.outline.withValues(alpha: 0.2)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(t['settings_graph_ai_req_title']!, style: theme.textTheme.labelLarge),
+                  const SizedBox(height: 8),
+                  _RequirementRow(label: t['settings_graph_ai_req_privacy']!, met: privacyOk),
+                  _RequirementRow(label: t['settings_graph_ai_req_login']!, met: loginOk),
+                  _RequirementRow(label: t['settings_graph_ai_req_pro']!, met: proOk),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
             Text(t['settings_graph_ai_when_active_title']!, style: theme.textTheme.labelLarge),
             const SizedBox(height: 4),
             ...['settings_graph_ai_feat_1', 'settings_graph_ai_feat_2', 'settings_graph_ai_feat_3'].map(
@@ -228,9 +291,13 @@ class SettingsGraphAiStatusCard extends ConsumerWidget {
             ),
             if (graphAiLocked && !localOnly) ...[
               const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => showProPaywall(context, ref, reasonKey: 'pro_reason_graph'),
-                child: Text(t['settings_graph_ai_unlock']!),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.tonalIcon(
+                  onPressed: () => showProPaywall(context, ref, reasonKey: 'pro_reason_graph'),
+                  icon: const Icon(Icons.workspace_premium_outlined, size: 18),
+                  label: Text(t['settings_graph_ai_unlock']!),
+                ),
               ),
             ],
           ],

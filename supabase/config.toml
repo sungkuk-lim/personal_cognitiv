@@ -40,7 +40,6 @@ additional_redirect_urls = [
   "memoryos://login-callback",
   "memoryos://**",
 ]
-enable_confirmations = false
 jwt_expiry = 3600
 
 [auth.email]

@@ -18,7 +18,7 @@ function Invoke-Adb([string]$CmdLine) {
 
 if (-not $ScreenshotsOnly -and -not $SkipTests) {
     Write-Host "==> Unit tests (P0 regression)" -ForegroundColor Cyan
-    flutter test test/graph_entity_audit_test.dart test/memory_entity_reenrich_test.dart test/local_memory_thread_test.dart test/graph_satellite_default_expand_test.dart test/qa_checklist_smoke_test.dart
+    flutter test test/graph_entity_audit_test.dart test/memory_entity_reenrich_test.dart test/local_memory_thread_test.dart test/graph_satellite_default_expand_test.dart test/qa_checklist_smoke_test.dart test/app_empty_state_test.dart
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     Write-Host "OK: P0 unit tests" -ForegroundColor Green
 }

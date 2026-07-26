@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/crash_reporting.dart';
 import '../core/ocr_config.dart';
 import '../core/prefs.dart';
 import '../features/graph/graph_chat_save.dart';
@@ -107,25 +108,20 @@ Future<String> recognizeTextWithMlKit(String imagePath) async {
   if (!File(imagePath).existsSync()) return '';
 
   TextRecognizer? koreanRecognizer;
-  TextRecognizer? fallbackRecognizer;
   try {
     koreanRecognizer = TextRecognizer(script: TextRecognitionScript.korean);
-    final koreanText = (await koreanRecognizer.processImage(InputImage.fromFilePath(imagePath))).text.trim();
-    if (koreanText.isNotEmpty) return koreanText;
-  } catch (e) {
+    final koreanText = (await koreanRecognizer
+            .processImage(InputImage.fromFilePath(imagePath))
+            .timeout(const Duration(seconds: 10)))
+        .text
+        .trim();
+    return koreanText;
+  } catch (e, stack) {
     debugPrint('ML Kit Korean OCR error: $e');
-  } finally {
-    await koreanRecognizer?.close();
-  }
-
-  try {
-    fallbackRecognizer = TextRecognizer();
-    return (await fallbackRecognizer.processImage(InputImage.fromFilePath(imagePath))).text.trim();
-  } catch (e) {
-    debugPrint('ML Kit fallback OCR error: $e');
+    await CrashReporting.recordError(e, stack, reason: 'mlkit_ocr');
     return '';
   } finally {
-    await fallbackRecognizer?.close();
+    await koreanRecognizer?.close();
   }
 }
 

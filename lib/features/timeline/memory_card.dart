@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -8,6 +9,7 @@ import '../../features/graph/graph_chat_save.dart';
 import '../../models/memory.dart';
 import '../../providers/app_providers.dart';
 import '../../providers/memory_notifier.dart';
+import '../../providers/timeline_providers.dart';
 import '../../utils/memory_detail_text.dart';
 import '../../utils/memory_grouping.dart';
 import '../../utils/memory_image_memos.dart';
@@ -21,47 +23,93 @@ import '../../widgets/trust_source_badge.dart';
 import '../../utils/ocr_utils.dart';
 import '../../utils/recall_anchor.dart';
 
+/// 타임라인 카드에 공통으로 쓰는 데이터 — 카드마다 provider를 watch하지 않습니다.
+class TimelineCardContext {
+  const TimelineCardContext({
+    required this.locale,
+    required this.translations,
+    required this.imagePaths,
+    required this.imageMemos,
+    required this.videoPaths,
+    required this.placeCache,
+    required this.fullAddressCache,
+    required this.allMemories,
+    this.cardMeta = const {},
+  });
+
+  final Locale locale;
+  final Map<String, String> translations;
+  final Map<String, List<String>> imagePaths;
+  final Map<String, List<String>> imageMemos;
+  final Map<String, List<String>> videoPaths;
+  final Map<String, String> placeCache;
+  final Map<String, String> fullAddressCache;
+  final List<Memory> allMemories;
+  final Map<String, TimelineCardMeta> cardMeta;
+
+  TimelineCardMeta? metaFor(String memoryId) => cardMeta[memoryId];
+}
+
 /// 같은 날·같은 장소 기억 묶음 카드.
-class MemoryGroupCard extends ConsumerWidget {
+class MemoryGroupCard extends ConsumerStatefulWidget {
   const MemoryGroupCard({
     super.key,
     required this.group,
+    required this.contextData,
     required this.onTapMemory,
     this.confirmDelete,
     this.onDeleteMemory,
   });
 
   final MemoryTimelineGroup group;
+  final TimelineCardContext contextData;
   final void Function(Memory memory) onTapMemory;
   final Future<bool> Function()? confirmDelete;
   final void Function(Memory memory)? onDeleteMemory;
 
+  static const int _initialVisibleCount = 3;
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MemoryGroupCard> createState() => _MemoryGroupCardState();
+}
+
+class _MemoryGroupCardState extends ConsumerState<MemoryGroupCard> {
+  var _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final group = widget.group;
+    final contextData = widget.contextData;
     if (!group.isGrouped) {
-      return MemoryCard(memory: group.primary, onTap: () => onTapMemory(group.primary));
+      return MemoryCard(
+        memory: group.primary,
+        contextData: contextData,
+        onTap: () => widget.onTapMemory(group.primary),
+      );
     }
 
-    final locale = ref.watch(languageProvider);
-    final placeCache = ref.watch(memoryPlaceNamesProvider);
-    final fullAddressCache = ref.watch(memoryPlaceFullAddressesProvider);
-    final allMemories = ref.watch(memoryListProvider);
+    final locale = contextData.locale;
     final placeTitle = displayGroupAddress(
       group,
-      placeCache,
-      fullAddressCache,
+      contextData.placeCache,
+      contextData.fullAddressCache,
       localeCode: locale.languageCode,
-      allMemories: allMemories,
+      allMemories: contextData.allMemories,
     );
     final dateLabel = locale.languageCode == 'ko'
         ? DateFormat('M월 d일', 'ko').format(group.primary.createdAt)
         : DateFormat('MMM d', 'en').format(group.primary.createdAt);
     final accent = colorForMemoryCluster(group.key);
+    final total = group.memories.length;
+    final showExpand = total > MemoryGroupCard._initialVisibleCount;
+    final visibleCount = _expanded || !showExpand ? total : MemoryGroupCard._initialVisibleCount;
+    final hiddenCount = total - visibleCount;
 
-    return Card(
+    return RepaintBoundary(
+      child: Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      clipBehavior: Clip.antiAlias,
+      clipBehavior: Clip.hardEdge,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -100,17 +148,29 @@ class MemoryGroupCard extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
             child: Column(
               children: [
-                for (var i = 0; i < group.memories.length; i++) ...[
+                for (var i = 0; i < visibleCount; i++) ...[
                   if (i > 0) const SizedBox(height: 8),
                   _DismissibleSubMemoryCard(
                     memory: group.memories[i],
                     accent: accent,
-                    allMemories: allMemories,
-                    onTap: () => onTapMemory(group.memories[i]),
-                    confirmDelete: confirmDelete,
-                    onDismissed: onDeleteMemory == null
+                    contextData: contextData,
+                    onTap: () => widget.onTapMemory(group.memories[i]),
+                    confirmDelete: widget.confirmDelete,
+                    onDismissed: widget.onDeleteMemory == null
                         ? null
-                        : () => onDeleteMemory!(group.memories[i]),
+                        : () => widget.onDeleteMemory!(group.memories[i]),
+                  ),
+                ],
+                if (showExpand && hiddenCount > 0) ...[
+                  const SizedBox(height: 8),
+                  TextButton.icon(
+                    onPressed: () => setState(() => _expanded = !_expanded),
+                    icon: Icon(_expanded ? Icons.expand_less : Icons.expand_more),
+                    label: Text(
+                      _expanded
+                          ? (locale.languageCode == 'ko' ? '접기' : 'Show less')
+                          : (locale.languageCode == 'ko' ? '기억 $hiddenCount개 더 보기' : '$hiddenCount more memories'),
+                    ),
                   ),
                 ],
               ],
@@ -118,6 +178,7 @@ class MemoryGroupCard extends ConsumerWidget {
           ),
         ],
       ),
+    ),
     );
   }
 }
@@ -126,7 +187,7 @@ class _DismissibleSubMemoryCard extends StatelessWidget {
   const _DismissibleSubMemoryCard({
     required this.memory,
     required this.accent,
-    required this.allMemories,
+    required this.contextData,
     required this.onTap,
     this.confirmDelete,
     this.onDismissed,
@@ -134,7 +195,7 @@ class _DismissibleSubMemoryCard extends StatelessWidget {
 
   final Memory memory;
   final Color accent;
-  final List<Memory> allMemories;
+  final TimelineCardContext contextData;
   final VoidCallback onTap;
   final Future<bool> Function()? confirmDelete;
   final VoidCallback? onDismissed;
@@ -145,7 +206,7 @@ class _DismissibleSubMemoryCard extends StatelessWidget {
       return _SubMemoryCard(
         memory: memory,
         accent: accent,
-        allMemories: allMemories,
+        contextData: contextData,
         onTap: onTap,
       );
     }
@@ -167,7 +228,7 @@ class _DismissibleSubMemoryCard extends StatelessWidget {
       child: _SubMemoryCard(
         memory: memory,
         accent: accent,
-        allMemories: allMemories,
+        contextData: contextData,
         onTap: onTap,
       ),
     );
@@ -178,21 +239,21 @@ class _SubMemoryCard extends ConsumerWidget {
   const _SubMemoryCard({
     required this.memory,
     required this.accent,
-    required this.allMemories,
+    required this.contextData,
     required this.onTap,
   });
 
   final Memory memory;
   final Color accent;
-  final List<Memory> allMemories;
+  final TimelineCardContext contextData;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final locale = ref.watch(languageProvider);
-    final imagePaths = ref.watch(memoryImagePathsProvider);
-    final imageMemos = ref.watch(memoryImageMemosProvider);
-    final videoPaths = ref.watch(memoryVideoPathsProvider);
+    final locale = contextData.locale;
+    final imagePaths = contextData.imagePaths;
+    final imageMemos = contextData.imageMemos;
+    final videoPaths = contextData.videoPaths;
     final timeText = DateFormat('HH:mm', locale.languageCode).format(memory.createdAt);
     final thumb = primaryMediaThumbForMemoryId(memory.id, imagePaths, videoPaths);
     final hasVideo = memoryHasVideo(memory.id, videoPaths);
@@ -202,9 +263,11 @@ class _SubMemoryCard extends ConsumerWidget {
     final content = isGraphNote
         ? graphNoteCardBody(memory)
         : (memory.content.trim().isNotEmpty ? memory.content.trim() : memory.summary);
-    final keywords = buildKeywordChips(
-      memory,
-      Theme.of(context).colorScheme,
+    final keywords = _keywordChips(
+      memory: memory,
+      labels: contextData.metaFor(memory.id)?.keywordLabels,
+      colorScheme: Theme.of(context).colorScheme,
+      localeCode: locale.languageCode,
       onKeywordTap: (keyword) => openGraphKeywordFocus(ref, keyword),
     );
 
@@ -309,20 +372,42 @@ class _SubMemoryCard extends ConsumerWidget {
 }
 
 class MemoryCard extends ConsumerWidget {
+  const MemoryCard({
+    super.key,
+    required this.memory,
+    this.contextData,
+    this.onTap,
+  });
+
   final Memory memory;
+  final TimelineCardContext? contextData;
   final VoidCallback? onTap;
-  const MemoryCard({super.key, required this.memory, this.onTap});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final t = ref.watch(translationsProvider);
-    final locale = ref.watch(languageProvider);
-    final placeCache = ref.watch(memoryPlaceNamesProvider);
-    final fullAddressCache = ref.watch(memoryPlaceFullAddressesProvider);
-    final allMemories = ref.watch(memoryListProvider);
-    final imagePaths = ref.watch(memoryImagePathsProvider);
-    final imageMemos = ref.watch(memoryImageMemosProvider);
-    final videoPaths = ref.watch(memoryVideoPathsProvider);
+    final TimelineCardContext resolvedContext;
+    if (contextData != null) {
+      resolvedContext = contextData!;
+    } else {
+      resolvedContext = TimelineCardContext(
+        locale: ref.watch(languageProvider),
+        translations: ref.watch(translationsProvider),
+        imagePaths: ref.watch(memoryImagePathsProvider),
+        imageMemos: ref.watch(memoryImageMemosProvider),
+        videoPaths: ref.watch(memoryVideoPathsProvider),
+        placeCache: ref.watch(memoryPlaceNamesProvider),
+        fullAddressCache: ref.watch(memoryPlaceFullAddressesProvider),
+        allMemories: ref.watch(memoryListProvider),
+      );
+    }
+    final t = resolvedContext.translations;
+    final locale = resolvedContext.locale;
+    final placeCache = resolvedContext.placeCache;
+    final fullAddressCache = resolvedContext.fullAddressCache;
+    final allMemories = resolvedContext.allMemories;
+    final imagePaths = resolvedContext.imagePaths;
+    final imageMemos = resolvedContext.imageMemos;
+    final videoPaths = resolvedContext.videoPaths;
     final localImagePath = primaryMediaThumbForMemoryId(memory.id, imagePaths, videoPaths);
     final photoCount = imageCountForMemoryId(memory.id, imagePaths);
     final hasVideo = memoryHasVideo(memory.id, videoPaths);
@@ -333,29 +418,33 @@ class MemoryCard extends ConsumerWidget {
     final dateText = locale.languageCode == 'ko'
         ? DateFormat('M월 d일 HH:mm', 'ko').format(memory.createdAt)
         : DateFormat('MMM d, HH:mm', 'en').format(memory.createdAt);
-    final placeTitle = displayPlaceAddress(
-      memory,
-      placeCache,
-      fullAddressCache,
-      localeCode: locale.languageCode,
-      allMemories: allMemories,
-    );
+    final placeTitle = resolvedContext.metaFor(memory.id)?.placeTitle ??
+        displayPlaceAddress(
+          memory,
+          placeCache,
+          fullAddressCache,
+          localeCode: locale.languageCode,
+          allMemories: isGraphNoteMemory(memory) ? allMemories : null,
+        );
     final content = isGraphNoteMemory(memory)
         ? graphNoteCardBody(memory)
         : (memory.content.trim().isNotEmpty
             ? memory.content.trim()
             : stripLatLngFromTitle(memory.summary));
     final accent = colorForMemory(memory);
-    final keywords = buildKeywordChips(
-      memory,
-      Theme.of(context).colorScheme,
+    final keywords = _keywordChips(
+      memory: memory,
+      labels: resolvedContext.metaFor(memory.id)?.keywordLabels,
+      colorScheme: Theme.of(context).colorScheme,
+      localeCode: locale.languageCode,
       onKeywordTap: (keyword) => openGraphKeywordFocus(ref, keyword),
     );
 
-    return Card(
+    return RepaintBoundary(
+      child: Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      clipBehavior: Clip.antiAlias,
+      clipBehavior: Clip.hardEdge,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(24),
@@ -381,7 +470,13 @@ class MemoryCard extends ConsumerWidget {
                     const SizedBox(width: 8),
                     TrustSourceBadge(memory: memory, compact: true),
                     const SizedBox(width: 6),
-                    _RecallAnchorBadge(memory: memory, localeCode: locale.languageCode, t: t),
+                    _RecallAnchorBadge(
+                      status: resolvedContext.metaFor(memory.id)?.recallStatus ??
+                          recallAnchorStatus(memory, localeCode: locale.languageCode),
+                      memory: memory,
+                      localeCode: locale.languageCode,
+                      t: t,
+                    ),
                     const Spacer(),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -442,6 +537,7 @@ class MemoryCard extends ConsumerWidget {
           ],
         ),
       ),
+    ),
     );
   }
 }
@@ -454,13 +550,22 @@ class _CardImage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (kIsWeb) {
+      return Image.network(
+        path,
+        height: height,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+      );
+    }
     return Image.file(
       File(path),
       height: height,
       width: double.infinity,
       fit: BoxFit.cover,
-      filterQuality: FilterQuality.high,
-      cacheWidth: 1200,
+      filterQuality: FilterQuality.low,
+      cacheWidth: 480,
       errorBuilder: (_, _, _) => const SizedBox.shrink(),
     );
   }
@@ -542,20 +647,44 @@ class _MediaThumbnail extends StatelessWidget {
   }
 }
 
+List<Widget> _keywordChips({
+  required Memory memory,
+  required List<String>? labels,
+  required ColorScheme colorScheme,
+  required String localeCode,
+  void Function(String keyword)? onKeywordTap,
+}) {
+  if (labels != null && labels.isNotEmpty) {
+    return buildKeywordChipsFromLabels(
+      memory,
+      labels,
+      colorScheme,
+      onKeywordTap: onKeywordTap,
+    );
+  }
+  return buildKeywordChips(
+    memory,
+    colorScheme,
+    localeCode: localeCode,
+    onKeywordTap: onKeywordTap,
+  );
+}
+
 class _RecallAnchorBadge extends StatelessWidget {
   const _RecallAnchorBadge({
+    required this.status,
     required this.memory,
     required this.localeCode,
     required this.t,
   });
 
+  final RecallAnchorStatus status;
   final Memory memory;
   final String localeCode;
   final Map<String, String> t;
 
   @override
   Widget build(BuildContext context) {
-    final status = recallAnchorStatus(memory, localeCode: localeCode);
     final (icon, label, color) = switch (status) {
       RecallAnchorStatus.active => (
           Icons.near_me_rounded,

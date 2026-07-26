@@ -19,7 +19,7 @@ class _LocationPermissionTileState extends ConsumerState<LocationPermissionTile>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _refresh();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
   }
 
   @override
@@ -42,8 +42,10 @@ class _LocationPermissionTileState extends ConsumerState<LocationPermissionTile>
 
   String _statusLabel(Map<String, String> t, AppLocationAccess access) {
     switch (access) {
-      case AppLocationAccess.granted:
-        return t['location_status_granted']!;
+      case AppLocationAccess.always:
+        return t['location_status_always'] ?? t['location_status_granted']!;
+      case AppLocationAccess.whileInUse:
+        return t['location_status_while_in_use'] ?? t['location_status_granted']!;
       case AppLocationAccess.denied:
         return t['location_status_denied']!;
       case AppLocationAccess.deniedForever:
@@ -55,7 +57,8 @@ class _LocationPermissionTileState extends ConsumerState<LocationPermissionTile>
 
   String _actionLabel(Map<String, String> t, AppLocationAccess access) {
     switch (access) {
-      case AppLocationAccess.granted:
+      case AppLocationAccess.always:
+      case AppLocationAccess.whileInUse:
         return t['location_manage']!;
       case AppLocationAccess.denied:
         return t['location_allow']!;
@@ -74,12 +77,13 @@ class _LocationPermissionTileState extends ConsumerState<LocationPermissionTile>
     try {
       final access = _access ?? await LocationPermissionService.currentAccess();
       switch (access) {
-        case AppLocationAccess.granted:
+        case AppLocationAccess.always:
+        case AppLocationAccess.whileInUse:
           await LocationPermissionService.openAppSettings();
         case AppLocationAccess.denied:
           final result = await LocationPermissionService.requestAccess();
           if (!mounted) return;
-          if (result == AppLocationAccess.granted) {
+          if (LocationPermissionService.hasForegroundAccess(result)) {
             messenger.showSnackBar(SnackBar(content: Text(t['location_granted_snack']!)));
           } else if (result == AppLocationAccess.deniedForever) {
             messenger.showSnackBar(
@@ -107,7 +111,7 @@ class _LocationPermissionTileState extends ConsumerState<LocationPermissionTile>
 
   @override
   Widget build(BuildContext context) {
-    final t = ref.watch(translationsProvider);
+    final t = ref.read(translationsProvider);
     final access = _access;
 
     return ListTile(

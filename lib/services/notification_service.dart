@@ -71,6 +71,8 @@ class NotificationService {
   Future<void> scheduleDailyPulse({
     required tz.TZDateTime scheduledDate,
     String localeCode = 'ko',
+    String? title,
+    String? body,
   }) async {
     if (!_initialized) await initialize();
     final channelName = localeCode == 'ko' ? '기억 펄스' : 'Memory pulse';
@@ -87,13 +89,39 @@ class NotificationService {
       ),
       iOS: const DarwinNotificationDetails(),
     );
+    final resolvedTitle = title?.trim().isNotEmpty == true
+        ? title!.trim()
+        : (localeCode == 'ko' ? '모담넷 · 오늘의 기억' : 'MemoryOS · Today');
+    final resolvedBody = body?.trim().isNotEmpty == true
+        ? body!.trim()
+        : (localeCode == 'ko' ? '잠깐, 오늘 떠오른 기억이 있어요' : 'A memory from today is waiting');
+
+    // USE_EXACT_ALARM is not allowed for non alarm/calendar apps.
+    // Prefer SCHEDULE_EXACT_ALARM when the user grants it; otherwise inexact.
+    var mode = AndroidScheduleMode.inexactAllowWhileIdle;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final androidPlugin = _plugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      final canExact = await androidPlugin?.canScheduleExactNotifications();
+      if (canExact == true) {
+        mode = AndroidScheduleMode.exactAllowWhileIdle;
+      } else {
+        await androidPlugin?.requestExactAlarmsPermission();
+        final granted = await androidPlugin?.canScheduleExactNotifications();
+        if (granted == true) {
+          mode = AndroidScheduleMode.exactAllowWhileIdle;
+        }
+      }
+    }
+
     await _plugin.zonedSchedule(
       dailyPulseNotificationId,
-      localeCode == 'ko' ? '모담넷 · 오늘의 기억' : 'MemoryOS · Today',
-      localeCode == 'ko' ? '잠깐, 오늘 떠오른 기억이 있어요' : 'A memory from today is waiting',
+      resolvedTitle,
+      resolvedBody,
       scheduledDate,
       details,
-      androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+      androidScheduleMode: mode,
       uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
       matchDateTimeComponents: DateTimeComponents.time,
       payload: 'pulse:scheduled',

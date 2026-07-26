@@ -65,3 +65,7 @@ ui_dump.xml
 # Firebase local
 .firebase/
 firebase-debug.log
+
+# Local Play/RevenueCat credentials
+secrets/
+

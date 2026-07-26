@@ -7,6 +7,7 @@ import 'graph_layout.dart';
 GraphNodeKind graphNodeKindForSatellitePrefix(String kindPrefix) {
   return switch (kindPrefix) {
     'person' => GraphNodeKind.person,
+    'pet' => GraphNodeKind.pet,
     'place' => GraphNodeKind.place,
     'organization' => GraphNodeKind.organization,
     'event' => GraphNodeKind.event,
@@ -28,8 +29,9 @@ Color graphColorForSatellitePrefix(String kindPrefix) {
 int graphSatelliteMaxForPrefix(String kindPrefix) {
   return switch (kindPrefix) {
     'person' => 12,
+    'pet' => 6,
     'place' => 3,
-    'organization' => 2,
+    'organization' => 6,
     'event' => 3,
     'activity' => 3,
     'content' => 2,
@@ -46,6 +48,7 @@ String graphSatelliteKindLabel(String kindPrefix, String localeCode) {
   if (localeCode == 'ko') {
     return switch (kindPrefix) {
       'person' => '사람',
+      'pet' => '반려견',
       'place' => '장소',
       'organization' => '조직',
       'event' => '이벤트',
@@ -61,6 +64,7 @@ String graphSatelliteKindLabel(String kindPrefix, String localeCode) {
   }
   return switch (kindPrefix) {
     'person' => 'Person',
+    'pet' => 'Pet',
     'place' => 'Place',
     'organization' => 'Organization',
     'event' => 'Event',

@@ -12,7 +12,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('App launches smoke test', (WidgetTester tester) async {
-    SharedPreferences.setMockInitialValues({'onboarding_complete': true, 'guest_mode': true});
+    SharedPreferences.setMockInitialValues({'onboarding_done': true, 'guest_mode': true});
     final prefs = await SharedPreferences.getInstance();
 
     await tester.pumpWidget(

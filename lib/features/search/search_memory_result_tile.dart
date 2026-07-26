@@ -56,11 +56,20 @@ class SearchMemoryResultTile extends StatelessWidget {
                 child: SizedBox(
                   width: 64,
                   height: 64,
-                  child: thumb != null && File(thumb).existsSync()
+                  child: thumb != null
                       ? Stack(
                           fit: StackFit.expand,
                           children: [
-                            Image.file(File(thumb), fit: BoxFit.cover),
+                            Image.file(
+                              File(thumb),
+                              fit: BoxFit.cover,
+                              cacheWidth: 192,
+                              filterQuality: FilterQuality.medium,
+                              errorBuilder: (_, _, _) => ColoredBox(
+                                color: memory.categoryColor.withValues(alpha: 0.2),
+                                child: Icon(Icons.photo_camera_outlined, color: memory.categoryColor),
+                              ),
+                            ),
                             if (photoCount > 1)
                               Positioned(
                                 right: 4,

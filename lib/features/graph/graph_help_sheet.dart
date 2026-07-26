@@ -18,10 +18,12 @@ void showGraphHelpSheet(
   showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     builder: (ctx) {
+      final bottomInset = MediaQuery.paddingOf(ctx).bottom;
       return DraggableScrollableSheet(
         expand: false,
         initialChildSize: insights.isEmpty ? 0.48 : 0.55,
@@ -30,7 +32,7 @@ void showGraphHelpSheet(
         builder: (_, scrollController) {
           return SingleChildScrollView(
             controller: scrollController,
-            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            padding: EdgeInsets.fromLTRB(20, 12, 20, 28 + bottomInset),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -109,6 +111,16 @@ void showGraphHelpSheet(
                 _HelpSection(
                   icon: Icons.link_rounded,
                   text: t['graph_bridge_hint']!,
+                ),
+                const SizedBox(height: 12),
+                _HelpSection(
+                  icon: Icons.verified_user_outlined,
+                  text: t['graph_trust_sheet_source_body']!,
+                ),
+                const SizedBox(height: 12),
+                _HelpSection(
+                  icon: Icons.timeline_rounded,
+                  text: '${t['graph_edge_legend_title']!}\n${t['graph_edge_legend_body']!}',
                 ),
               ],
             ),

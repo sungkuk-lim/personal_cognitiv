@@ -59,11 +59,10 @@ class _PersonNodeAvatarState extends ConsumerState<PersonNodeAvatar> {
   @override
   Widget build(BuildContext context) {
     final enabled = ref.watch(contactPersonAvatarsEnabledProvider);
-    final cache = ref.watch(personAvatarCacheProvider);
     final name = sanitizeContactLabel(widget.name);
     final initial = personAvatarInitial(name);
     final bg = widget.accent ?? personAvatarColor(name);
-    final cachedPhoto = enabled ? cache.photoFor(name) : null;
+    final cachedPhoto = enabled ? ref.watch(personAvatarCacheProvider.select((c) => c.photoFor(name))) : null;
     final photo = cachedPhoto ?? (enabled ? _directPhoto : null);
     if (enabled && photo == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _ensureDirectLookup());

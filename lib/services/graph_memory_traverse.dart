@@ -7,12 +7,15 @@ import '../utils/memory_theme_tags.dart';
 import '../utils/memory_query.dart';
 
 /// Phase C — 엔티티 공유로 연결된 기억을 BFS로 확장합니다.
+///
+/// [maxDepth] 기본 5: 나→1차→…→5차까지 기억 묶음을 따라갈 수 있습니다.
+/// (화면의 허브·위성 UI와 달리, 검색·답변용 **기억 간 hop** 깊이입니다.)
 List<Memory> traverseGraphForQuery({
   required List<Memory> memories,
   required MemoryQuery query,
   String localeCode = 'ko',
-  int limit = 12,
-  int maxDepth = 2,
+  int limit = 24,
+  int maxDepth = 5,
 }) {
   if (memories.isEmpty || query.isEmpty) return [];
 

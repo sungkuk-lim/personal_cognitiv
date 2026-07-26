@@ -5,13 +5,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'ocr_config.dart';
 import 'replay_config.dart';
-import '../core/graph_hub_config.dart';
+import 'graph_hub_config.dart';
+import 'graph_display_mode.dart';
+import 'graph_view_lens.dart';
 import '../utils/graph_time_filter.dart';
+import '../utils/graph_context_lens.dart';
 import '../utils/memory_input_category.dart';
 
 const String prefThemeMode = 'theme_mode';
 const String prefSeedColor = 'seed_color';
 const String prefGraphPositions = 'graph_node_positions';
+const String prefGraphLayoutVersion = 'graph_layout_version';
+/// 트리 레이아웃 전환 시 구형(원형 궤도) 저장 좌표를 무효화합니다.
+const int kGraphLayoutVersion = 2;
 const String prefOcrEngineMode = 'ocr_engine_mode';
 const String prefOcrVisionQuality = 'ocr_vision_quality';
 const String prefMemoryImagePaths = 'memory_image_paths';
@@ -28,14 +34,28 @@ const String prefLanguageCode = 'language_code';
 const String prefOnboardingDone = 'onboarding_done';
 const String prefGraphTimeRange = 'graph_time_range';
 const String prefGraphHubViewMode = 'graph_hub_view_mode';
+const String prefGraphViewLens = 'graph_view_lens';
+const String prefGraphDisplayMode = 'graph_display_mode';
+const String prefGraphContextLens = 'graph_context_lens';
+const String prefOnDeviceOcrInFlight = 'on_device_ocr_in_flight';
+const String prefGraphProBannerDismissed = 'graph_pro_banner_dismissed';
 const String prefCompletionMilestoneNotified = 'completion_milestone_notified';
 const String prefLastMemoryInputCategory = 'last_memory_input_category';
 const String prefGraphAchievementsUnlocked = 'graph_achievements_unlocked';
 const String prefContactPersonAvatarsEnabled = 'contact_person_avatars_enabled';
 const String prefReplayCoachDone = 'replay_coach_done';
+const String prefSearchCoachDone = 'search_coach_done';
+const String prefGraphTrustHintDismissed = 'graph_trust_hint_dismissed';
+
+bool readGraphTrustHintDismissed(SharedPreferences prefs) =>
+    prefs.getBool(prefGraphTrustHintDismissed) ?? false;
+
+Future<void> writeGraphTrustHintDismissed(SharedPreferences prefs, bool dismissed) async {
+  await prefs.setBool(prefGraphTrustHintDismissed, dismissed);
+}
 
 bool readProactiveRecallEnabled(SharedPreferences prefs) =>
-    prefs.getBool(prefProactiveRecallEnabled) ?? true;
+    prefs.getBool(prefProactiveRecallEnabled) ?? false;
 
 Future<void> writeProactiveRecallEnabled(SharedPreferences prefs, bool enabled) async {
   await prefs.setBool(prefProactiveRecallEnabled, enabled);
@@ -54,7 +74,14 @@ Future<void> writeLastPulseDate(SharedPreferences prefs, String dateKey) async {
   await prefs.setString(prefLastPulseDate, dateKey);
 }
 
-String readLanguageCode(SharedPreferences prefs) => prefs.getString(prefLanguageCode) ?? 'ko';
+String readLanguageCode(SharedPreferences prefs) {
+  final raw = prefs.getString(prefLanguageCode)?.trim();
+  if (raw == null || raw.isEmpty) return 'ko';
+  // 구버전 'zh' / 'pt' 값을 신규 id로 정규화합니다.
+  if (raw == 'zh') return 'zh_Hans';
+  if (raw == 'pt') return 'pt_BR';
+  return raw;
+}
 
 Future<void> writeLanguageCode(SharedPreferences prefs, String code) async {
   await prefs.setString(prefLanguageCode, code);
@@ -100,6 +127,14 @@ Future<void> saveThemeMode(SharedPreferences prefs, ThemeMode mode) async {
 }
 
 Map<String, Offset> readSavedGraphPositions(SharedPreferences prefs) {
+  final savedVersion = prefs.getInt(prefGraphLayoutVersion) ?? 0;
+  if (savedVersion != kGraphLayoutVersion) {
+    // 동기 경로에서는 remove만; 다음 프레임에 버전 기록은 save 시 함께.
+    prefs.remove(prefGraphPositions);
+    // ignore: discarded_futures
+    prefs.setInt(prefGraphLayoutVersion, kGraphLayoutVersion);
+    return {};
+  }
   final raw = prefs.getString(prefGraphPositions);
   if (raw == null) return {};
   try {
@@ -116,6 +151,7 @@ Map<String, Offset> readSavedGraphPositions(SharedPreferences prefs) {
 Future<void> saveGraphPositions(SharedPreferences prefs, Map<String, Offset> positions) async {
   final encoded = positions.map((key, value) => MapEntry(key, {'dx': value.dx, 'dy': value.dy}));
   await prefs.setString(prefGraphPositions, jsonEncode(encoded));
+  await prefs.setInt(prefGraphLayoutVersion, kGraphLayoutVersion);
 }
 
 Map<String, List<String>> readMemoryImagePaths(SharedPreferences prefs) {
@@ -229,6 +265,41 @@ GraphHubViewMode readGraphHubViewMode(SharedPreferences prefs) =>
 
 Future<void> writeGraphHubViewMode(SharedPreferences prefs, GraphHubViewMode mode) async {
   await prefs.setString(prefGraphHubViewMode, graphHubViewModeToString(mode));
+}
+
+GraphViewLens readGraphViewLens(SharedPreferences prefs) =>
+    graphViewLensFromString(prefs.getString(prefGraphViewLens));
+
+Future<void> writeGraphViewLens(SharedPreferences prefs, GraphViewLens lens) async {
+  await prefs.setString(prefGraphViewLens, graphViewLensToString(lens));
+}
+
+GraphDisplayMode readGraphDisplayMode(SharedPreferences prefs) =>
+    graphDisplayModeFromString(prefs.getString(prefGraphDisplayMode));
+
+Future<void> writeGraphDisplayMode(SharedPreferences prefs, GraphDisplayMode mode) async {
+  await prefs.setString(prefGraphDisplayMode, graphDisplayModeToString(mode));
+}
+
+bool readOnDeviceOcrInFlight(SharedPreferences prefs) =>
+    prefs.getBool(prefOnDeviceOcrInFlight) ?? false;
+
+Future<void> writeOnDeviceOcrInFlight(SharedPreferences prefs, bool inFlight) async {
+  await prefs.setBool(prefOnDeviceOcrInFlight, inFlight);
+}
+
+GraphContextLens readGraphContextLens(SharedPreferences prefs) =>
+    GraphContextLensX.fromPref(prefs.getString(prefGraphContextLens));
+
+Future<void> writeGraphContextLens(SharedPreferences prefs, GraphContextLens lens) async {
+  await prefs.setString(prefGraphContextLens, lens.prefValue);
+}
+
+bool readGraphProBannerDismissed(SharedPreferences prefs) =>
+    prefs.getBool(prefGraphProBannerDismissed) ?? false;
+
+Future<void> writeGraphProBannerDismissed(SharedPreferences prefs, bool dismissed) async {
+  await prefs.setBool(prefGraphProBannerDismissed, dismissed);
 }
 
 String readLastMemoryInputCategory(SharedPreferences prefs) =>

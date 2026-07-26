@@ -94,10 +94,19 @@ Future<void> showMemoryEntityEditor(
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: () async {
-                    final merged = mergeManualEntityLabels(memory, working);
-                    await ref.read(memoryListProvider.notifier).updateMemory(
-                          memory.copyWith(entities: merged),
+                    final latest = ref.read(memoryListProvider).where((m) => m.id == memory.id).firstOrNull ?? memory;
+                    final merged = mergeManualEntityLabels(latest, working);
+                    final saved = await ref.read(memoryListProvider.notifier).updateMemory(
+                          latest.copyWith(entities: merged),
                         );
+                    if (saved == null) {
+                      if (ctx.mounted) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(content: Text(t['entity_edit_save_failed']!)),
+                        );
+                      }
+                      return;
+                    }
                     if (ctx.mounted) Navigator.pop(ctx);
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(

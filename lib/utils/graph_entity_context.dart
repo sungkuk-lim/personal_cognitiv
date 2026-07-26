@@ -2,6 +2,7 @@ import '../models/graph_ai_snapshot.dart';
 import '../models/memory.dart';
 import 'graph_fragment_freshness.dart';
 import 'graph_satellites.dart';
+import 'memory_entity_cache.dart';
 import 'memory_entity_extract.dart';
 
 /// 관계망 엔티티·배지·위성의 단일 진실 소스.
@@ -24,9 +25,13 @@ class GraphEntityContext {
     GraphMemoryFragment? aiFragment,
   }) {
     final fragment = freshGraphFragmentForMemory(memory, aiFragment);
-    final bundle = extractMemoryEntities(memory, localeCode: localeCode, aiFragment: fragment);
+    final bundle = MemoryEntityCache.bundle(
+      memory,
+      localeCode: localeCode,
+      aiFragment: fragment,
+    );
     final hubTitle = bundle.eventTitle.trim();
-    final visible = visibleGraphSatellitesForMemory(
+    final visible = MemoryEntityCache.visibleSatellites(
       memory,
       localeCode: localeCode,
       aiFragment: fragment,

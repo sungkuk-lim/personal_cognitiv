@@ -1,11 +1,16 @@
 import '../models/graph_ai_snapshot.dart';
 import '../models/memory.dart';
 import 'entity_canonical.dart';
+import 'graph_entity_quality.dart';
 import 'korean_person_names.dart';
 import 'memory_entity_extract.dart';
 import 'memory_participation_extract.dart';
 import 'memory_entity_edit.dart';
+import 'memory_quantity_validate.dart';
+import 'memory_semantic_extract.dart';
+import 'memory_semantic_flow.dart';
 import 'memory_theme_tags.dart';
+import 'organization_hierarchy.dart';
 
 /// 관계: rel:{predicate}:{object} 또는 rel:{subject}:{predicate}:{object}
 const String kRelPrefix = 'rel:';
@@ -15,7 +20,10 @@ const String kImportancePrefix = 'importance:';
 
 const kRelationPredicates = {
   '동행': ['함께', '같이', '동행', '와', '과'],
+  '만남': ['만나', '만난', '만났', '만났다'],
   '방문': ['방문', '갔', '다녀', '여행', '도착'],
+  '회의': ['회의', '미팅', '논의'],
+  '발표': ['발표', '프레젠', '세미나'],
   '식사': ['식사', '먹', '저녁', '점심', '아침', '식당'],
   '촬영': ['사진', '촬영', '찍', '셀카'],
   '대화': ['이야기', '대화', '얘기', '수다'],
@@ -24,8 +32,24 @@ const kRelationPredicates = {
   '도움': ['도움', '도와', '부탁'],
   '공부': ['공부', '학습', '수업'],
   '운동': ['운동', '달리', '헬스', '수영'],
+  '개발': ['개발', '구현', '코딩', '프로그래밍'],
+  '출시': ['출시', '런칭', '공개', '오픈'],
+  '투자': ['투자', '펀딩', '지원'],
+  '설립': ['설립', '창업', '시작'],
+  '인수': ['인수', '매수'],
+  '구매': ['구매', '구입', '샀', '주문'],
   '응시': ['시험', '응시', '친대', '봤'],
   '응원': ['응원', '좋겠', '바라', '힘내', '잘 쳤'],
+  '좋아함': ['좋아하', '좋아해', '즐겨', '선호'],
+  '싫어함': ['싫어하', '싫어해', '꺼려'],
+  '외진': ['외진', '내원', '외래'],
+  '진료': ['진료', '진료과', '과로', '과에'],
+  '소속': ['소속', '병원에', '병원에는'],
+  '총인원': ['총', '명이', '명이 왔', '명이 나왔'],
+  '보고': ['보고', '현황', '기록으로'],
+  '출발': ['에서', '출발', '보냈'],
+  '인솔': ['인솔', '동행', '안내', '호송'],
+  '진료과': ['진료과', '과에', '과의'],
 };
 
 const kLifeEventKeywords = {
@@ -102,6 +126,9 @@ List<MemoryRelation> relationsForMemory(Memory memory) {
 
 /// 저장된 rel: 태그 + 본문 추출 관계를 합칩니다 (관계망·AI 훅용).
 List<MemoryRelation> effectiveRelationsForMemory(Memory memory, {String localeCode = 'ko'}) {
+  if (memoryHasManualEntityEdit(memory)) {
+    return relationsForMemory(memory);
+  }
   return _dedupeRelations([
     ...relationsForMemory(memory),
     ...extractRelationsFromMemory(memory, localeCode: localeCode),
@@ -177,6 +204,7 @@ List<MemoryRelation> extractRelationsFromMemory(Memory memory, {String localeCod
   for (final person in bundle.people) {
     final p = canonicalEntityLabel(person);
     if (p.isEmpty || p == '나') continue;
+    if (isNegatedRelationContext(text, '함께') || isNegatedRelationContext(text, p)) continue;
     final escaped = RegExp.escape(p);
     if (text.contains('함께') ||
         text.contains('같이') ||
@@ -189,10 +217,12 @@ List<MemoryRelation> extractRelationsFromMemory(Memory memory, {String localeCod
   for (final place in bundle.places) {
     final pl = canonicalEntityLabel(place);
     if (pl.isEmpty) continue;
+    if (isNegatedRelationContext(text, '방문') || isNegatedRelationContext(text, pl)) continue;
     relations.add(MemoryRelation(predicate: '방문', object: pl));
   }
 
   for (final food in foodTagsForMemory(memory)) {
+    if (isNegatedRelationContext(text, food) || isNegatedRelationContext(text, '먹')) continue;
     relations.add(MemoryRelation(predicate: '식사', object: food));
   }
 
@@ -212,18 +242,67 @@ List<MemoryRelation> extractRelationsFromMemory(Memory memory, {String localeCod
           entry.key == '방문' ||
           entry.key == '식사' ||
           entry.key == '응시' ||
-          entry.key == '응원') {
+          entry.key == '응원' ||
+          entry.key == '좋아함' ||
+          entry.key == '싫어함') {
         continue;
       }
       if (entry.value.any((w) => activity.contains(w) || text.contains(w))) {
+        if (entry.value.any((w) => isNegatedRelationContext(text, w))) continue;
         relations.add(MemoryRelation(predicate: entry.key, object: activity));
       }
     }
   }
 
+  if ((text.contains('좋아하') || text.contains('좋아해') || text.contains('즐겨')) &&
+      !isNegatedRelationContext(text, '좋아하')) {
+    var interestLabels = <String>{
+      ...interestTagsForMemory(memory, localeCode: localeCode),
+      ...extractSemanticFromText(memory.content).interests,
+    };
+    if (interestLabels.isEmpty && text.contains('AI')) {
+      interestLabels.add('AI');
+    }
+    for (final tag in interestLabels) {
+      final label = canonicalEntityLabel(tag);
+      if (label.isNotEmpty) {
+        relations.add(MemoryRelation(predicate: '좋아함', object: label));
+      }
+    }
+  }
+  if (RegExp(r'싫어하|싫어해|꺼려').hasMatch(text) && !isNegatedRelationContext(text, '싫어하')) {
+    for (final tag in interestTagsForMemory(memory, localeCode: localeCode)) {
+      final label = canonicalEntityLabel(tag);
+      if (label.isNotEmpty) {
+        relations.add(MemoryRelation(predicate: '싫어함', object: label));
+      }
+    }
+  }
+
+  for (final match in RegExp(r'([가-힣]{2,4})이\s+([가-힣]{2,4})를?\s+(?:고용|초대|데려)').allMatches(text)) {
+    final subject = normalizeKoreanPersonName(match.group(1)!);
+    final object = normalizeKoreanPersonName(match.group(2)!);
+    if (subject.isNotEmpty && object.isNotEmpty) {
+      relations.add(MemoryRelation(subject: subject, predicate: '고용', object: object));
+    }
+  }
+
   _appendFamilyExamRelations(relations, memory, bundle, text, localeCode);
+  _appendSemanticFlowRelations(relations, text, localeCode);
 
   return _dedupeRelations(relations);
+}
+
+void _appendSemanticFlowRelations(
+  List<MemoryRelation> relations,
+  String text,
+  String localeCode,
+) {
+  final frame = parseMemorySemanticFlow(text, localeCode: localeCode);
+  if (frame.structuredRelations.isEmpty) return;
+  for (final rel in frame.structuredRelations) {
+    relations.add(rel);
+  }
 }
 
 void _appendFamilyExamRelations(
@@ -338,7 +417,11 @@ Memory enrichMemoryGraphSemantics(Memory memory, {String localeCode = 'ko'}) {
           !e.startsWith(kRelPrefix) &&
           !e.startsWith(kEventPrefix) &&
           !e.startsWith(kTimePrefix) &&
-          !e.startsWith(kImportancePrefix))
+          !e.startsWith(kImportancePrefix) &&
+          !e.startsWith(kHierarchyJsonPrefix))
+      .toList();
+  final preservedHierarchyTags = memory.entities
+      .where((e) => e.startsWith(kHierarchyJsonPrefix))
       .toList();
   var enriched = enrichMemoryWithThemeTags(
     memory.copyWith(entities: withoutInternal),
@@ -346,22 +429,32 @@ Memory enrichMemoryGraphSemantics(Memory memory, {String localeCode = 'ko'}) {
   );
 
   final bundle = extractMemoryEntities(enriched, localeCode: localeCode);
+  final flowFrame = parseMemorySemanticFlow(
+    '${enriched.content}\n${enriched.summary}',
+    localeCode: localeCode,
+    entityTags: preservedHierarchyTags,
+  );
   final extras = <String>[];
+  if (manualVisible == null) {
+    extras.addAll(countTagsFromFrame(flowFrame));
+  }
 
   final dedupedVisible = manualVisible ?? rebuildUserVisibleEntitiesFromContent(enriched, localeCode: localeCode);
 
-  for (final rel in extractRelationsFromMemory(enriched, localeCode: localeCode)) {
-    final tag = rel.toEntityTag();
-    if (!enriched.entities.contains(tag)) extras.add(tag);
-  }
+  if (manualVisible == null) {
+    for (final rel in extractRelationsFromMemory(enriched, localeCode: localeCode)) {
+      final tag = rel.toEntityTag();
+      if (!enriched.entities.contains(tag)) extras.add(tag);
+    }
 
-  final eventTitle = bundle.eventTitle.trim();
-  if (eventTitle.isNotEmpty && bundle.hasEventHub) {
-    final hub = MemoryEventHub(
-      id: eventSlugFromTitle(eventTitle),
-      title: normalizeEventTitle(eventTitle),
-    );
-    extras.add(hub.toEntityTag());
+    final eventTitle = bundle.eventTitle.trim();
+    if (eventTitle.isNotEmpty && bundle.hasEventHub) {
+      final hub = MemoryEventHub(
+        id: eventSlugFromTitle(eventTitle),
+        title: normalizeEventTitle(eventTitle),
+      );
+      extras.add(hub.toEntityTag());
+    }
   }
 
   for (final facet in _timeFacetTags(enriched.createdAt, localeCode: localeCode)) {
@@ -375,6 +468,7 @@ Memory enrichMemoryGraphSemantics(Memory memory, {String localeCode = 'ko'}) {
     ...dedupedVisible,
     ...enriched.entities.where((e) => e.startsWith('tag:') && e != kTagEntitiesManual),
     if (manualVisible != null) kTagEntitiesManual,
+    ...preservedHierarchyTags,
     ...extras,
   ];
 

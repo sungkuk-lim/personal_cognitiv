@@ -26,12 +26,16 @@ class CrashReporting {
   }
 
   static Future<void> install() async {
-    if (AppEnv.enableCrashlytics && _hasValidFirebaseConfig) {
+    if (_hasValidFirebaseConfig) {
       try {
-        await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-        await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
+        if (Firebase.apps.isEmpty) {
+          await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+        }
+        if (AppEnv.enableCrashlytics) {
+          await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(!kDebugMode);
+          debugPrint('Crashlytics: Firebase initialized');
+        }
         _firebaseReady = true;
-        debugPrint('Crashlytics: Firebase initialized');
       } catch (e, stack) {
         debugPrint('Firebase init skipped: $e\n$stack');
       }

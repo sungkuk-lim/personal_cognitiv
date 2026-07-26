@@ -5,10 +5,11 @@ import '../../features/memory/memory_detail_presets.dart';
 import '../../features/memory/memory_detail_sheet.dart';
 import '../../providers/app_providers.dart';
 import '../../providers/memory_notifier.dart';
+import '../../providers/timeline_providers.dart';
 import '../../services/image_pipeline_service.dart';
 import '../../services/video_pipeline_service.dart';
-import '../../utils/memory_grouping.dart';
 import '../../widgets/daily_capture_nudge.dart';
+import '../../widgets/app_empty_state.dart';
 import 'memory_card.dart';
 
 class MemoryTimeline extends ConsumerWidget {
@@ -34,36 +35,27 @@ class MemoryTimeline extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final memories = ref.watch(memoryListProvider);
-    final t = ref.watch(translationsProvider);
-    final imagePaths = ref.watch(memoryImagePathsProvider);
-    final groups = groupMemoriesForTimeline(memories);
+    final snapshot = ref.watch(timelineListSnapshotProvider);
+    final memories = snapshot.memories;
+    final t = snapshot.translations;
+    final groups = snapshot.groups;
+    final cardContext = TimelineCardContext(
+      locale: snapshot.locale,
+      translations: snapshot.translations,
+      imagePaths: snapshot.imagePaths,
+      imageMemos: snapshot.imageMemos,
+      videoPaths: snapshot.videoPaths,
+      placeCache: snapshot.placeCache,
+      fullAddressCache: snapshot.fullAddressCache,
+      allMemories: memories,
+      cardMeta: snapshot.cardMeta,
+    );
 
     if (memories.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.auto_awesome, size: 56, color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5)),
-              const SizedBox(height: 16),
-              Text(
-                t['no_memories']!,
-                textAlign: TextAlign.center,
-                maxLines: 1,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                t['empty_hint']!,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ],
-          ),
-        ),
+      return AppEmptyState(
+        icon: Icons.auto_awesome,
+        title: t['no_memories']!,
+        subtitle: t['empty_hint'],
       );
     }
 
@@ -72,6 +64,9 @@ class MemoryTimeline extends ConsumerWidget {
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.only(bottom: 16),
+        addRepaintBoundaries: true,
+        addAutomaticKeepAlives: true,
+        cacheExtent: 720,
         itemCount: groups.length + 1,
         itemBuilder: (context, index) {
           if (index == 0) {
@@ -83,37 +78,39 @@ class MemoryTimeline extends ConsumerWidget {
             return Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
               child: Dismissible(
-              key: Key(memory.id),
-              direction: DismissDirection.endToStart,
-              confirmDismiss: (_) => _confirmDelete(context, ref),
-              background: _deleteBackground(),
-              onDismissed: (_) => _handleDelete(context, ref, memory.id, t),
-              child: MemoryCard(
-                memory: memory,
-                onTap: () => showMemoryDetailSheet(
-                  context,
-                  memory,
-                  imagePaths: imagePaths,
-                  options: MemoryDetailPresets.full,
+                key: Key(memory.id),
+                direction: DismissDirection.endToStart,
+                confirmDismiss: (_) => _confirmDelete(context, ref),
+                background: _deleteBackground(),
+                onDismissed: (_) => _handleDelete(context, ref, memory.id, t),
+                child: MemoryCard(
+                  memory: memory,
+                  contextData: cardContext,
+                  onTap: () => showMemoryDetailSheet(
+                    context,
+                    memory,
+                    imagePaths: snapshot.imagePaths,
+                    options: MemoryDetailPresets.full,
+                  ),
                 ),
               ),
-            ),
             );
           }
 
           return Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             child: MemoryGroupCard(
-            group: group,
-            confirmDelete: () => _confirmDelete(context, ref),
-            onDeleteMemory: (memory) => _handleDelete(context, ref, memory.id, t),
-            onTapMemory: (memory) => showMemoryDetailSheet(
-              context,
-              memory,
-              imagePaths: imagePaths,
-              options: MemoryDetailPresets.full,
+              group: group,
+              contextData: cardContext,
+              confirmDelete: () => _confirmDelete(context, ref),
+              onDeleteMemory: (memory) => _handleDelete(context, ref, memory.id, t),
+              onTapMemory: (memory) => showMemoryDetailSheet(
+                context,
+                memory,
+                imagePaths: snapshot.imagePaths,
+                options: MemoryDetailPresets.full,
+              ),
             ),
-          ),
           );
         },
       ),

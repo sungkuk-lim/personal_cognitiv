@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -7,6 +8,7 @@ import 'core/app_theme.dart';
 import 'core/system_ui.dart';
 import 'features/auth/auth_gate.dart';
 import 'features/navigation/main_navigation_screen.dart';
+import 'l10n/app_locales.dart';
 import 'providers/app_providers.dart';
 
 class MemoryOSApp extends ConsumerWidget {
@@ -28,10 +30,15 @@ class MemoryOSApp extends ConsumerWidget {
         final brightness = Theme.of(context).brightness;
         SystemChrome.setSystemUIOverlayStyle(systemUiOverlayForBrightness(brightness));
         ensureStatusBarVisible();
+        
         return child ?? const SizedBox.shrink();
       },
-      localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
-      supportedLocales: const [Locale('ko'), Locale('en')],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      supportedLocales: kSupportedLocales,
       home: const AuthGate(child: MainNavigationScreen()),
     );
   }

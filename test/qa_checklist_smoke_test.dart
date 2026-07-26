@@ -78,7 +78,7 @@ void main() {
     testWidgets('타임라인 RefreshIndicator 존재', (tester) async {
       SharedPreferences.setMockInitialValues({
         'guest_mode': true,
-        'onboarding_complete': true,
+        'onboarding_done': true,
       });
       final prefs = await SharedPreferences.getInstance();
       final sample = Memory(

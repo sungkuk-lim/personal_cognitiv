@@ -1,7 +1,6 @@
 import '../models/memory.dart';
-import 'memory_graph_semantics.dart';
+import 'memory_entity_extract.dart';
 import 'ocr_utils.dart';
-import 'memory_theme_tags.dart';
 
 /// 사용자가 관계 태그를 직접 수정했음을 표시합니다. 자동 re-enrich 시 표시 라벨을 덮어쓰지 않습니다.
 const String kTagEntitiesManual = 'tag:entities_manual';
@@ -33,4 +32,12 @@ List<String> mergeManualEntityLabels(Memory memory, List<String> userLabels) {
   }
 
   return [...cleaned, ...internal, kTagEntitiesManual];
+}
+
+/// 타임라인·회상·상세 — 수동 태그 편집 시 저장된 라벨을 그대로 노출합니다.
+List<String> displayTagsForMemory(Memory memory, {String localeCode = 'ko'}) {
+  if (memoryHasManualEntityEdit(memory)) {
+    return editableEntityLabelsForMemory(memory);
+  }
+  return userVisibleEntityLabels(memory, localeCode: localeCode);
 }

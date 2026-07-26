@@ -21,6 +21,7 @@ bool isGenericCapturePlaceLabel(String? label) {
 bool isMeaningfulPlaceLabel(String? label) {
   final v = label?.trim() ?? '';
   if (v.isEmpty || isGenericCapturePlaceLabel(v)) return false;
+  if (isLikelyLotNumber(v)) return false;
   return true;
 }
 

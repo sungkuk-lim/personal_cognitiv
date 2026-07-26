@@ -18,6 +18,7 @@ class MemoryMediaHeroImage extends StatelessWidget {
     this.borderRadius,
     this.cacheWidth,
     this.filterQuality = FilterQuality.medium,
+    this.useHero = true,
   });
 
   final String memoryId;
@@ -29,25 +30,31 @@ class MemoryMediaHeroImage extends StatelessWidget {
   final BorderRadius? borderRadius;
   final int? cacheWidth;
   final FilterQuality filterQuality;
+  final bool useHero;
 
   @override
   Widget build(BuildContext context) {
-    final file = File(path);
-    Widget image = file.existsSync()
-        ? Image.file(
-            file,
-            width: width,
-            height: height,
-            fit: fit,
-            cacheWidth: cacheWidth,
-            filterQuality: filterQuality,
-            errorBuilder: (_, _, _) => _brokenPlaceholder(width, height),
-          )
-        : _brokenPlaceholder(width, height);
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final resolvedCacheWidth = cacheWidth ??
+        ((width != null && width!.isFinite)
+            ? (width! * dpr).round().clamp(128, 960)
+            : null);
+
+    Widget image = Image.file(
+      File(path),
+      width: width,
+      height: height,
+      fit: fit,
+      cacheWidth: resolvedCacheWidth,
+      filterQuality: filterQuality,
+      errorBuilder: (_, _, _) => _brokenPlaceholder(width, height),
+    );
 
     if (borderRadius != null) {
       image = ClipRRect(borderRadius: borderRadius!, child: image);
     }
+
+    if (!useHero) return image;
 
     return Hero(
       tag: memoryMediaHeroTag(memoryId, photoIndex),
@@ -77,11 +84,13 @@ class BouncingPhotoCountBadge extends StatefulWidget {
     required this.count,
     this.label,
     this.style = BouncingPhotoCountBadgeStyle.compact,
+    this.animated = true,
   });
 
   final int count;
   final String? label;
   final BouncingPhotoCountBadgeStyle style;
+  final bool animated;
 
   @override
   State<BouncingPhotoCountBadge> createState() => _BouncingPhotoCountBadgeState();
@@ -101,7 +110,11 @@ class _BouncingPhotoCountBadgeState extends State<BouncingPhotoCountBadge> with 
       TweenSequenceItem(tween: Tween(begin: 0.55, end: 1.14), weight: 55),
       TweenSequenceItem(tween: Tween(begin: 1.14, end: 1.0), weight: 45),
     ]).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
-    _controller.forward();
+    if (widget.animated) {
+      _controller.forward();
+    } else {
+      _controller.value = 1;
+    }
   }
 
   @override

@@ -25,22 +25,31 @@ String canonicalGraphAnchorNodeId(String rawId, {String? anchorLabel}) {
 String canonicalGraphAnchorNodeIdForNode(GraphNodeData node) =>
     canonicalGraphAnchorNodeId(node.id, anchorLabel: node.title.trim());
 
-/// 인물·장소 등 엔티티 노드에 미디어를 붙일 때 graph_note 앵커로 씁니다.
+/// 인물·장소·허브 등 노드에 미디어를 붙일 때 graph_note 앵커로 씁니다.
 bool isEntityGraphMediaAnchor(String nodeId) {
   final id = nodeId.trim();
   if (id.isEmpty) return false;
-  if (id.startsWith('memory_') ||
-      id.startsWith('event_hub_') ||
-      id.startsWith('entity_note_') ||
-      id.startsWith('group_') ||
-      id.startsWith('focus_hub_')) {
+  // 기억 카드·엔티티노트는 해당 memory.id에 직접 붙인다.
+  if (id.startsWith('memory_') || id.startsWith('entity_note_')) {
     return false;
   }
   return true;
 }
 
 String graphAnchorLabelFromNodeId(String nodeId) {
-  const prefixes = ['person_', 'place_', 'organization_', 'activity_', 'goal_', 'emotion_'];
+  const prefixes = [
+    'person_',
+    'pet_',
+    'place_',
+    'organization_',
+    'activity_',
+    'event_',
+    'goal_',
+    'emotion_',
+    'group_',
+    'event_hub_',
+    'focus_hub_',
+  ];
   for (final prefix in prefixes) {
     if (nodeId.startsWith(prefix)) return nodeId.substring(prefix.length);
   }

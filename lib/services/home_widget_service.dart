@@ -15,6 +15,10 @@ class HomeWidgetService {
 
   static const androidProvider =
       'com.theNext.personal_cognitive.MemoryPulseWidgetProvider';
+  static int _lastSyncAtMs = 0;
+  static String _lastSyncKey = '';
+  static int _lastThemeAtMs = 0;
+  static int _lastThemeArgb = 0;
 
   static Future<void> initialize(void Function(Uri? uri) onWidgetTap) async {
     if (!Platform.isAndroid) return;
@@ -45,6 +49,7 @@ class HomeWidgetService {
   }) async {
     if (!Platform.isAndroid) return;
     try {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
       final latest = memories.isNotEmpty ? memories.first : null;
       final empty = localeCode == 'ko' ? '마이크로 첫 기억을 남겨 보세요' : 'Tap mic to save your first memory';
       final title = localeCode == 'ko' ? '모담넷' : 'MemoryOS';
@@ -57,6 +62,21 @@ class HomeWidgetService {
             : DateFormat('MMM d, HH:mm', 'en');
         timeLabel = fmt.format(latest.createdAt);
       }
+
+      final syncKey = [
+        localeCode,
+        memories.length,
+        latest?.id ?? '',
+        latest?.summary ?? '',
+        latest?.content ?? '',
+        timeLabel,
+        seedColor?.toARGB32() ?? 0,
+        themeMode.name,
+      ].join('|');
+      final isDuplicateBurst = syncKey == _lastSyncKey && (nowMs - _lastSyncAtMs) < 8000;
+      if (isDuplicateBurst) return;
+      _lastSyncKey = syncKey;
+      _lastSyncAtMs = nowMs;
 
       await HomeWidget.saveWidgetData<String>('widget_title', title);
       await HomeWidget.saveWidgetData<String>('widget_count', countLabel);
@@ -92,6 +112,11 @@ class HomeWidgetService {
   static Future<void> refreshTheme(Color seedColor, {ThemeMode themeMode = ThemeMode.system}) async {
     if (!Platform.isAndroid) return;
     try {
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final argb = seedColor.toARGB32();
+      if (argb == _lastThemeArgb && (nowMs - _lastThemeAtMs) < 1500) return;
+      _lastThemeArgb = argb;
+      _lastThemeAtMs = nowMs;
       await saveThemeColors(seedColor, themeMode: themeMode);
       await HomeWidget.updateWidget(qualifiedAndroidName: androidProvider);
     } catch (e, stack) {

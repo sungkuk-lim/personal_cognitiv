@@ -124,4 +124,23 @@ void main() {
     expect(satellites.food, isNot(contains('저녁')));
     expect(satellites.food, isNot(contains('식사')));
   });
+
+  test('patient names are people not places on clinic memory', () {
+    final memory = Memory(
+      id: 'clinic',
+      content:
+          '성소병원에는 이정숙 환자를 정형외과, 김명희 환자를 안과, 정준호 환자, 이기동 환자는 치과로 진료했습니다.',
+      summary: '성소병원 외진',
+      entities: const ['성소병원', '이정숙', '김명희', '정준호', '이기동', '정형외과', '안과', '치과'],
+      category: 'Work',
+      createdAt: DateTime(2026, 7, 9),
+    );
+
+    final satellites = visibleGraphSatellitesForMemory(memory, localeCode: 'ko');
+    expect(satellites.people, containsAll(['정준호', '김명희', '이기동', '이정숙']));
+    expect(satellites.places, isNot(contains('정준호')));
+    expect(satellites.places, isNot(contains('김명희')));
+    expect(satellites.places, isNot(contains('이기동')));
+    expect(satellites.places, contains('성소병원'));
+  });
 }

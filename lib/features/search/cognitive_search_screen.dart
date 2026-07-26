@@ -36,6 +36,8 @@ import '../../utils/ocr_utils.dart';
 import '../../utils/semantic_search.dart';
 import '../../services/graph_memory_traverse.dart';
 
+import '../subscription/paywall_sheet.dart';
+import 'search_coach_mark.dart';
 import 'search_filter_chips_bar.dart';
 import 'search_memory_result_tile.dart';
 
@@ -116,6 +118,11 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
 
       });
 
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      showSearchCoachMarkIfNeeded(context, ref);
     });
 
   }
@@ -868,6 +875,18 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
                                   header: entry.text,
                                   searchQuery: entry.searchQuery ?? '',
                                 ),
+                                if (requiresProCloudForCloudFeatures &&
+                                    !ref.watch(hasProEntitlementProvider)) ...[
+                                  const SizedBox(height: 10),
+                                  _SearchProTeaser(
+                                    t: t,
+                                    onTap: () => showProPaywall(
+                                      context,
+                                      ref,
+                                      reasonKey: 'pro_reason_search',
+                                    ),
+                                  ),
+                                ],
                               ],
                             )
 
@@ -892,6 +911,55 @@ class _CognitiveSearchScreenState extends ConsumerState<CognitiveSearchScreen> {
 }
 
 
+
+class _SearchProTeaser extends StatelessWidget {
+  const _SearchProTeaser({required this.t, required this.onTap});
+
+  final Map<String, String> t;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.primaryContainer.withValues(alpha: 0.45),
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              Icon(Icons.auto_awesome_rounded, size: 20, color: scheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      t['search_pro_teaser_title']!,
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      t['search_pro_teaser_body']!,
+                      style: TextStyle(fontSize: 12, height: 1.35, color: scheme.onPrimaryContainer),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                t['search_pro_teaser_cta']!,
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.primary),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _SearchCompositeHints extends StatelessWidget {
 

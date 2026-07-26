@@ -16,7 +16,8 @@ class MemoryPulseWidgetProvider : HomeWidgetProvider() {
         widgetData: SharedPreferences,
     ) {
         appWidgetIds.forEach { widgetId ->
-            val views = RemoteViews(context.packageName, R.layout.memory_pulse_widget).apply {
+            try {
+                val views = RemoteViews(context.packageName, R.layout.memory_pulse_widget).apply {
                 setTextViewText(
                     R.id.widget_title,
                     widgetData.getString("widget_title", context.getString(R.string.widget_default_title)),
@@ -71,8 +72,16 @@ class MemoryPulseWidgetProvider : HomeWidgetProvider() {
                 setOnClickPendingIntent(R.id.widget_btn_graph, graph)
                 setOnClickPendingIntent(R.id.widget_memory_card, openApp)
                 setOnClickPendingIntent(R.id.widget_root, openApp)
+                }
+                appWidgetManager.updateAppWidget(widgetId, views)
+            } catch (_: Exception) {
+                // 미지원 뷰·비트맵 오류 시 최소 레이아웃으로 폴백
+                val fallback = RemoteViews(context.packageName, R.layout.memory_pulse_widget).apply {
+                    setTextViewText(R.id.widget_title, context.getString(R.string.widget_default_title))
+                    setTextViewText(R.id.widget_latest, context.getString(R.string.widget_empty))
+                }
+                appWidgetManager.updateAppWidget(widgetId, fallback)
             }
-            appWidgetManager.updateAppWidget(widgetId, views)
         }
     }
 }

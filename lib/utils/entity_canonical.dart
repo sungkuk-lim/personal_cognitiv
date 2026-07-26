@@ -7,6 +7,15 @@ const List<List<String>> kEntityAliasGroups = [
   ['할아버지', '할배', 'grandfather'],
   ['할머니', 'grandmother'],
   ['할머니', '할무니'],
+  ['AI', '인공지능', 'artificial intelligence'],
+  ['OpenAI', '오픈AI', '오픈에이아이'],
+  ['서울대학교', '서울 대학교'],
+  ['연세대학교', '연세 대학교'],
+  ['서울아산병원', '서울 아산병원'],
+  ['삼성전자', '삼성 전자'],
+  ['NLP', '자연어처리'],
+  ['LLM', '거대언어모델'],
+  ['GPU', '그래픽카드'],
 ];
 
 final Map<String, String> _aliasToCanonical = () {

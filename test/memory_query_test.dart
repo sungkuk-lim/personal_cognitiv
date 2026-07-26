@@ -39,6 +39,18 @@ void main() {
       expect(q.hasPhoto, isTrue);
       expect(q.isComposite, isTrue);
     });
+
+    test('인공지능·스타트업 — 관심사 (사람 아님)', () {
+      final q = parseNaturalLanguageQuery(
+        '홍길동이 부산에서 스타트업과 인공지능 프로젝트 논의',
+        localeCode: 'ko',
+      );
+      expect(q.interests, contains('인공지능'));
+      expect(q.interests, contains('스타트업'));
+      expect(q.people, contains('홍길동'));
+      expect(q.people, isNot(contains('인공지능')));
+      expect(q.people, isNot(contains('스타트업')));
+    });
   });
 
   group('filterMemoriesByQuery', () {

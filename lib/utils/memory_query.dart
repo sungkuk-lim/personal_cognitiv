@@ -5,6 +5,7 @@ import 'memory_entity_extract.dart';
 import 'memory_keyword_ui.dart';
 import 'memory_theme_tags.dart';
 import 'memory_graph_semantics.dart';
+import 'memory_semantic_extract.dart';
 import 'semantic_search.dart';
 
 /// 복합 검색 조건 — Phase A~D 공통.
@@ -16,6 +17,7 @@ class MemoryQuery {
     this.activities = const [],
     this.foods = const [],
     this.hobbies = const [],
+    this.interests = const [],
     this.seasons = const [],
     this.weathers = const [],
     this.hasPhoto,
@@ -32,6 +34,7 @@ class MemoryQuery {
   final List<String> activities;
   final List<String> foods;
   final List<String> hobbies;
+  final List<String> interests;
   final List<String> seasons;
   final List<String> weathers;
   final bool? hasPhoto;
@@ -48,6 +51,7 @@ class MemoryQuery {
       activities.isNotEmpty ||
       foods.isNotEmpty ||
       hobbies.isNotEmpty ||
+      interests.isNotEmpty ||
       seasons.isNotEmpty ||
       weathers.isNotEmpty ||
       hasPhoto == true ||
@@ -65,6 +69,7 @@ class MemoryQuery {
     List<String>? activities,
     List<String>? foods,
     List<String>? hobbies,
+    List<String>? interests,
     List<String>? seasons,
     List<String>? weathers,
     bool? hasPhoto,
@@ -83,6 +88,7 @@ class MemoryQuery {
       activities: activities ?? this.activities,
       foods: foods ?? this.foods,
       hobbies: hobbies ?? this.hobbies,
+      interests: interests ?? this.interests,
       seasons: seasons ?? this.seasons,
       weathers: weathers ?? this.weathers,
       hasPhoto: clearPhoto ? null : (hasPhoto ?? this.hasPhoto),
@@ -120,6 +126,10 @@ class MemoryQuery {
     if (chipId.startsWith('hobby:')) {
       final v = chipId.substring('hobby:'.length);
       return copyWith(hobbies: hobbies.where((p) => p != v).toList());
+    }
+    if (chipId.startsWith('interest:')) {
+      final v = chipId.substring('interest:'.length);
+      return copyWith(interests: interests.where((p) => p != v).toList());
     }
     if (chipId.startsWith('season:')) {
       final v = chipId.substring('season:'.length);
@@ -163,6 +173,9 @@ List<MemoryQueryChip> memoryQueryChips(MemoryQuery query, {String localeCode = '
   }
   for (final h in query.hobbies) {
     chips.add(MemoryQueryChip(id: 'hobby:$h', label: h, iconName: 'hobby'));
+  }
+  for (final i in query.interests) {
+    chips.add(MemoryQueryChip(id: 'interest:$i', label: i, iconName: 'interest'));
   }
   for (final s in query.seasons) {
     chips.add(MemoryQueryChip(id: 'season:$s', label: s, iconName: 'season'));
@@ -227,6 +240,7 @@ MemoryQuery parseNaturalLanguageQuery(String raw, {String localeCode = 'ko'}) {
     final token = normalizeKoreanPersonName(match.group(1)!.trim());
     if (token.length >= 2 &&
         isLikelyKoreanPersonName(token) &&
+        !isKnownInterestLabel(token) &&
         !kEmotionLexicon.contains(token) &&
         !kQueryActivityLexicon.contains(token) &&
         !kFoodLexicon.contains(token)) {
@@ -237,6 +251,7 @@ MemoryQuery parseNaturalLanguageQuery(String raw, {String localeCode = 'ko'}) {
     final token = normalizeKoreanPersonName(match.group(1)!.trim());
     if (token.length >= 2 &&
         isLikelyKoreanPersonName(token) &&
+        !isKnownInterestLabel(token) &&
         !kEmotionLexicon.contains(token) &&
         !kQueryActivityLexicon.contains(token) &&
         !kFoodLexicon.contains(token)) {
@@ -246,6 +261,7 @@ MemoryQuery parseNaturalLanguageQuery(String raw, {String localeCode = 'ko'}) {
   for (final match in RegExp(r'[가-힣]{2,4}').allMatches(q)) {
     final token = match.group(0)!;
     if (isLikelyKoreanPersonName(token) &&
+        !isKnownInterestLabel(token) &&
         !kEmotionLexicon.contains(token) &&
         !kActivityLexicon.contains(token)) {
       people.add(normalizeKoreanPersonName(token));
@@ -253,6 +269,7 @@ MemoryQuery parseNaturalLanguageQuery(String raw, {String localeCode = 'ko'}) {
   }
 
   final hobbies = _pickLexicon(q, kHobbyLexicon);
+  final interests = _pickLexicon(q, kSemanticInterestLexicon);
   final seasons = _pickLexicon(q, kSeasonLexicon);
   final weathers = _pickLexicon(q, kWeatherLexicon);
 
@@ -268,6 +285,16 @@ MemoryQuery parseNaturalLanguageQuery(String raw, {String localeCode = 'ko'}) {
     if (token.length >= 2 && (looksLikeKoreanPlaceName(token) || isGraphVenueToken(token))) {
       places.add(token);
     }
+  }
+  // 「먹었던 식당」「갔던 카페」— 자연어 장소 의도
+  for (final match in RegExp(
+    r'(?:먹었던|갔던|방문한|들른)\s*([가-힣]{2,12}(?:식당|카페|술집|병원|공원|해수욕장|해변)?)',
+  ).allMatches(q)) {
+    final token = match.group(1)!.trim();
+    if (token.length >= 2) places.add(token);
+  }
+  if (RegExp(r'식당|밥집|맛집').hasMatch(q) && !places.any((p) => p.contains('식당'))) {
+    places.add('식당');
   }
 
   String? subCategory;
@@ -295,6 +322,7 @@ MemoryQuery parseNaturalLanguageQuery(String raw, {String localeCode = 'ko'}) {
     activities: mergedActivities,
     foods: foods,
     hobbies: hobbies,
+    interests: interests,
     seasons: seasons,
     weathers: weathers,
     hasPhoto: hasPhoto,
@@ -341,6 +369,28 @@ List<String> _dedupeStrings(List<String> items) {
 
 (DateTime?, DateTime?) _parseDateRange(String q, bool isKo) {
   final now = DateTime.now();
+  final todayStart = DateTime(now.year, now.month, now.day);
+  if (q.contains(isKo ? '오늘' : 'today')) {
+    return (todayStart, todayStart.add(const Duration(days: 1)).subtract(const Duration(milliseconds: 1)));
+  }
+  if (q.contains(isKo ? '어제' : 'yesterday')) {
+    final y = todayStart.subtract(const Duration(days: 1));
+    return (y, todayStart.subtract(const Duration(milliseconds: 1)));
+  }
+  if (q.contains(isKo ? '그제' : 'day before yesterday') || q.contains('그저께')) {
+    final d = todayStart.subtract(const Duration(days: 2));
+    return (d, d.add(const Duration(days: 1)).subtract(const Duration(milliseconds: 1)));
+  }
+  if (q.contains(isKo ? '이번 주' : 'this week') || q.contains(isKo ? '이번주' : 'this week')) {
+    final weekday = now.weekday; // 1=Mon
+    final weekStart = todayStart.subtract(Duration(days: weekday - 1));
+    return (weekStart, null);
+  }
+  if (q.contains(isKo ? '지난달' : 'last month') || q.contains(isKo ? '저번달' : 'last month')) {
+    final firstThis = DateTime(now.year, now.month, 1);
+    final firstLast = DateTime(now.year, now.month - 1, 1);
+    return (firstLast, firstThis.subtract(const Duration(milliseconds: 1)));
+  }
   if (q.contains(isKo ? '작년' : 'last year')) {
     return (DateTime(now.year - 1), DateTime(now.year, 1, 1).subtract(const Duration(milliseconds: 1)));
   }
@@ -351,6 +401,13 @@ List<String> _dedupeStrings(List<String> items) {
   if (recent != null) {
     final days = int.tryParse(recent.group(1)!) ?? 7;
     return (now.subtract(Duration(days: days)), null);
+  }
+  final monthDay = RegExp(r'(\d{1,2})\s*월\s*(\d{1,2})\s*일?').firstMatch(q);
+  if (monthDay != null) {
+    final m = int.tryParse(monthDay.group(1)!) ?? now.month;
+    final d = int.tryParse(monthDay.group(2)!) ?? now.day;
+    final start = DateTime(now.year, m, d);
+    return (start, start.add(const Duration(days: 1)).subtract(const Duration(milliseconds: 1)));
   }
   return (null, null);
 }
@@ -407,6 +464,14 @@ bool memoryMatchesQuery(
   }
   for (final hobby in query.hobbies) {
     if (!memoryHasThemeTag(memory, kTagHobbyPrefix, hobby) && !memory.content.contains(hobby)) return false;
+  }
+  for (final interest in query.interests) {
+    final tags = interestTagsForMemory(memory, localeCode: localeCode);
+    if (!tags.any((t) => t.contains(interest) || interest.contains(t)) &&
+        !memory.content.contains(interest) &&
+        !memory.summary.contains(interest)) {
+      return false;
+    }
   }
   for (final season in query.seasons) {
     if (!memoryHasThemeTag(memory, kTagSeasonPrefix, season) && !memory.content.contains(season)) return false;
@@ -487,6 +552,7 @@ String _reconstructText(MemoryQuery query) {
     ...query.activities,
     ...query.foods,
     ...query.hobbies,
+    ...query.interests,
     ...query.seasons,
     ...query.weathers,
     if (query.subCategory != null) query.subCategory!,
@@ -501,6 +567,7 @@ String describeMemoryQuery(MemoryQuery query, {String localeCode = 'ko'}) {
   if (query.emotions.isNotEmpty) parts.add(query.emotions.join('·'));
   if (query.activities.isNotEmpty) parts.add(query.activities.join('·'));
   if (query.foods.isNotEmpty) parts.add(query.foods.join('·'));
+  if (query.interests.isNotEmpty) parts.add(query.interests.join('·'));
   if (query.hasPhoto == true) parts.add(localeCode == 'ko' ? '사진' : 'photos');
   final joined = parts.where((p) => p.isNotEmpty).join(' + ');
   if (localeCode == 'ko') return '「$joined」 조건에 맞는 기억';

@@ -11,6 +11,7 @@ import '../../core/env.dart';
 import '../../core/ocr_config.dart';
 import '../../core/prefs.dart';
 import '../../core/replay_config.dart';
+import '../../l10n/app_locales.dart';
 import '../../providers/app_providers.dart';
 import '../../providers/person_avatar_provider.dart';
 import '../../providers/memory_notifier.dart';
@@ -30,8 +31,6 @@ import '../../services/firebase_email_auth_service.dart';
 import '../../features/auth/pattern_lock_screen.dart';
 import '../../features/legal/legal_consent_dialog.dart';
 import '../../features/legal/legal_document_screen.dart';
-import '../../features/subscription/paywall_sheet.dart';
-import '../../features/subscription/pro_saas_dashboard.dart';
 import '../../features/trust/trust_dashboard_screen.dart';
 import 'location_permission_tile.dart';
 import 'settings_plan_cards.dart';
@@ -106,20 +105,8 @@ class SettingsScreen extends ConsumerWidget {
             leading: const Icon(Icons.menu_book_rounded),
             title: Text(t['user_guide_title']!),
             subtitle: Text(t['user_guide_subtitle']!),
+            trailing: const Icon(Icons.chevron_right),
             onTap: () => _showUsageGuide(context, t),
-          ),
-          ListTile(
-            leading: const Icon(Icons.picture_as_pdf_outlined),
-            title: Text(t['user_guide_open_pdf']!),
-            subtitle: Text(t['user_guide_open_pdf_hint']!),
-            onTap: () => _openUserGuidePdf(context, t),
-          ),
-          ListTile(
-            leading: const Icon(Icons.language_outlined),
-            title: Text(t['user_guide_open_web']!),
-            subtitle: Text(t['user_guide_open_web_hint']!),
-            trailing: const Icon(Icons.open_in_new, size: 18),
-            onTap: () => _openUserGuideWeb(context, t),
           ),
           const Divider(),
           SettingsSectionHeader(
@@ -127,20 +114,7 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: t['settings_sec_plan_sub']!,
             icon: Icons.workspace_premium_outlined,
           ),
-          ListTile(
-            leading: Icon(
-              Icons.workspace_premium_rounded,
-              color: ref.watch(hasProEntitlementProvider) ? Colors.amber.shade700 : null,
-            ),
-            title: Text(t['pro_plan']!),
-            subtitle: Text(
-              ref.watch(hasProEntitlementProvider) ? t['pro_plan_hint_active']! : t['pro_plan_hint_free']!,
-            ),
-            trailing: ref.watch(hasProEntitlementProvider)
-                ? const Icon(Icons.check_circle, color: Colors.green)
-                : const Icon(Icons.chevron_right),
-            onTap: () => showProPaywall(context, ref),
-          ),
+          const SettingsPlanOverviewCard(),
           ListTile(
             leading: const Icon(Icons.refresh_rounded),
             title: Text(t['pro_refresh_status']!),
@@ -158,16 +132,6 @@ class SettingsScreen extends ConsumerWidget {
               );
             },
           ),
-          ListTile(
-            leading: const Icon(Icons.cloud_sync_rounded),
-            title: Text(t['pro_saas_title']!),
-            subtitle: Text(t['pro_saas_subtitle']!),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.of(context).push(
-              MaterialPageRoute<void>(builder: (_) => const ProSaasDashboardScreen()),
-            ),
-          ),
-          const SettingsPlanOverviewCard(),
           const Divider(),
           SettingsSectionHeader(
             title: t['settings_sec_memory']!,
@@ -451,18 +415,114 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: t['settings_sec_appearance_sub'],
             icon: Icons.palette_outlined,
           ),
-          ListTile(title: Text(t['theme_color']!)),
-          Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: Wrap(spacing: 12, children: themeColors.map((color) => GestureDetector(onTap: () async {
-            ref.read(seedColorProvider.notifier).state = color;
-            final prefs = ref.read(preferencesProvider);
-            await writeSeedColor(prefs, color);
-            await HomeWidgetService.refreshTheme(color, themeMode: ref.read(themeModeProvider));
-          }, child: CircleAvatar(backgroundColor: color, radius: 20, child: currentSeed == color ? const Icon(Icons.check, color: Colors.white) : null))).toList())),
-          ListTile(title: Text(t['language']!), trailing: DropdownButton<Locale>(value: ref.watch(languageProvider), onChanged: (l) {
-            if (l == null) return;
-            ref.read(languageProvider.notifier).state = l;
-            writeLanguageCode(ref.read(preferencesProvider), l.languageCode);
-          }, items: const [DropdownMenuItem(value: Locale('ko'), child: Text("한국어")), DropdownMenuItem(value: Locale('en'), child: Text("English"))])),
+          ListTile(
+            title: Text(t['theme_color']!),
+            subtitle: Text(t['theme_color_hint'] ?? t['settings_sec_appearance_sub']!),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: themeColors.map((color) {
+                final selected = currentSeed.toARGB32() == color.toARGB32();
+                final checkColor = ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+                    ? Colors.white
+                    : Colors.black87;
+                return Semantics(
+                  selected: selected,
+                  button: true,
+                  label: t['theme_color']!,
+                  child: GestureDetector(
+                    onTap: () async {
+                      ref.read(seedColorProvider.notifier).state = Color(color.toARGB32());
+                      final prefs = ref.read(preferencesProvider);
+                      await writeSeedColor(prefs, Color(color.toARGB32()));
+                      await HomeWidgetService.refreshTheme(
+                        Color(color.toARGB32()),
+                        themeMode: ref.read(themeModeProvider),
+                      );
+                    },
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 160),
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: selected
+                              ? Theme.of(context).colorScheme.onSurface
+                              : Colors.black26,
+                          width: selected ? 3 : 1,
+                        ),
+                        boxShadow: selected
+                            ? [
+                                BoxShadow(
+                                  color: color.withValues(alpha: 0.45),
+                                  blurRadius: 8,
+                                  spreadRadius: 1,
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: selected
+                          ? Icon(Icons.check_rounded, color: checkColor, size: 26)
+                          : null,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          ListTile(
+            title: Text(t['language']!),
+            subtitle: Text(
+              (() {
+                final id = localeIdFromLocale(ref.watch(languageProvider));
+                return appLocaleOptionForId(id)?.menuLabel ?? id;
+              })(),
+            ),
+            trailing: const Icon(Icons.chevron_right_rounded),
+            onTap: () async {
+              final currentId = localeIdFromLocale(ref.read(languageProvider));
+              final selected = await showModalBottomSheet<AppLocaleOption>(
+                context: context,
+                showDragHandle: true,
+                builder: (ctx) {
+                  return SafeArea(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                          child: Text(
+                            t['language']!,
+                            style: Theme.of(ctx).textTheme.titleMedium,
+                          ),
+                        ),
+                        for (final option in kAppLocaleOptions)
+                          ListTile(
+                            leading: Text(option.flag, style: const TextStyle(fontSize: 22)),
+                            title: Text(option.nativeLabel),
+                            trailing: option.id == currentId
+                                ? Icon(Icons.check_rounded, color: Theme.of(ctx).colorScheme.primary)
+                                : null,
+                            onTap: () => Navigator.pop(ctx, option),
+                          ),
+                      ],
+                    ),
+                  );
+                },
+              );
+              if (selected == null) return;
+              ref.read(languageProvider.notifier).state = selected.locale;
+              await writeLanguageCode(
+                ref.read(preferencesProvider),
+                selected.id,
+              );
+            },
+          ),
           const Divider(),
           SettingsSectionHeader(
             title: t['settings_sec_lock'] ?? '기기 잠금',

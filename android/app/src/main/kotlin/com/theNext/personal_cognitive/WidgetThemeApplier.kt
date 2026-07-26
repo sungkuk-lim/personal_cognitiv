@@ -56,6 +56,32 @@ internal object WidgetThemeBitmaps {
         canvas.restore()
         return bitmap
     }
+
+    fun frostedCard(
+        context: Context,
+        fillColor: Int,
+        borderColor: Int,
+        radiusDp: Float,
+        widthDp: Int = 280,
+        heightDp: Int = 120,
+    ): Bitmap {
+        val density = context.resources.displayMetrics.density
+        val width = (widthDp * density).toInt().coerceAtLeast(8)
+        val height = (heightDp * density).toInt().coerceAtLeast(8)
+        val radius = radiusDp * density
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        val rect = RectF(0f, 0f, width.toFloat(), height.toFloat())
+        val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = fillColor }
+        canvas.drawRoundRect(rect, radius, radius, fill)
+        val border = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 1.2f * density
+            color = borderColor
+        }
+        canvas.drawRoundRect(rect, radius, radius, border)
+        return bitmap
+    }
 }
 
 internal fun RemoteViews.applyWidgetTheme(context: Context, widgetData: android.content.SharedPreferences) {
@@ -90,18 +116,27 @@ internal fun RemoteViews.applyWidgetTheme(context: Context, widgetData: android.
 
     val accent = readColor("widget_accent_color")
     val isDark = readInt(widgetData, "widget_is_dark", 1) != 0
+    val textPrimary = readColor("widget_text_primary")
     if (accent != 0) {
-        setImageViewBitmap(
-            R.id.widget_graph_network,
-            WidgetGraphBackgroundRenderer.render(context, accent, isDark, widthDp = 480, heightDp = 300),
-        )
+        try {
+            setImageViewBitmap(
+                R.id.widget_graph_network,
+                WidgetLogoBackgroundRenderer.render(context, accent, isDark, widthDp = 480, heightDp = 312),
+            )
+        } catch (_: OutOfMemoryError) {
+            setImageViewResource(R.id.widget_graph_network, R.drawable.modam_logo)
+        } catch (_: Exception) {
+            setImageViewResource(R.id.widget_graph_network, R.drawable.modam_logo)
+        }
         setInt(R.id.widget_brand_dot, "setColorFilter", accent)
     } else {
-        setImageViewResource(R.id.widget_graph_network, R.drawable.widget_graph_network)
+        setImageViewResource(R.id.widget_graph_network, R.drawable.modam_logo)
     }
 
-    val textPrimary = readColor("widget_text_primary")
-    if (textPrimary != 0) {
+    val textOnBg = readColor("widget_text_on_bg")
+    if (textOnBg != 0) {
+        setTextColor(R.id.widget_title, textOnBg)
+    } else if (textPrimary != 0) {
         setTextColor(R.id.widget_title, textPrimary)
     }
 
@@ -115,8 +150,19 @@ internal fun RemoteViews.applyWidgetTheme(context: Context, widgetData: android.
     }
 
     val cardBg = readColor("widget_card_bg")
+    val cardBorder = readColor("widget_card_border")
     if (cardBg != 0) {
-        setImageViewBitmap(R.id.widget_memory_card_bg, WidgetThemeBitmaps.roundedRect(context, cardBg, 16f, 280, 120))
+        setImageViewBitmap(
+            R.id.widget_memory_card_bg,
+            WidgetThemeBitmaps.frostedCard(
+                context,
+                cardBg,
+                if (cardBorder != 0) cardBorder else cardBg,
+                16f,
+                280,
+                120,
+            ),
+        )
     }
 
     applyChip(

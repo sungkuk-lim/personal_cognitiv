@@ -24,6 +24,7 @@ GraphNodeKind graphKindForKeyword(String keyword, List<Memory> matches, {String 
   if (matches.isEmpty) return GraphNodeKind.activity;
   return switch (classifyKeyword(keyword, matches.first, localeCode: localeCode)) {
     MemoryKeywordKind.person => GraphNodeKind.person,
+    MemoryKeywordKind.pet => GraphNodeKind.pet,
     MemoryKeywordKind.place => GraphNodeKind.place,
     MemoryKeywordKind.event => GraphNodeKind.event,
     MemoryKeywordKind.interest => GraphNodeKind.interest,

@@ -9,6 +9,7 @@ int compositeQueryDimensionCount(MemoryQuery query) {
   if (query.activities.isNotEmpty) n++;
   if (query.foods.isNotEmpty) n++;
   if (query.hobbies.isNotEmpty) n++;
+  if (query.interests.isNotEmpty) n++;
   if (query.seasons.isNotEmpty) n++;
   if (query.weathers.isNotEmpty) n++;
   if (query.hasPhoto == true) n++;

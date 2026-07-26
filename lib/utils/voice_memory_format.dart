@@ -1,7 +1,9 @@
 import 'graph_meaning_extract.dart';
 import 'memory_entity_extract.dart';
 
+import '../core/memory_work_type.dart';
 import '../models/memory.dart';
+import '../models/memory_pipeline_models.dart';
 import 'korean_person_names.dart';
 
 import 'photo_memory_format.dart';
@@ -77,6 +79,38 @@ PhotoMemoryFields buildVoiceMemoryFields({
 
   );
 
+}
+
+
+
+/// 파이프라인(②~⑦) 결과를 음성 기억 필드로 변환합니다.
+PhotoMemoryFields buildVoiceFieldsFromPipeline({
+  required MemoryCapturePipelineResult pipeline,
+  required DateTime capturedAt,
+  required String localeCode,
+  String? gpsPlace,
+}) {
+  final base = buildVoiceMemoryFields(
+    speechText: pipeline.normalizedText,
+    capturedAt: capturedAt,
+    localeCode: localeCode,
+    gpsPlace: gpsPlace,
+  );
+
+  final mergedEntities = sanitizeEntities([
+    ...base.entities,
+    ...pipeline.pipelineEntityTags,
+  ]);
+
+  final summary = pipeline.summary.trim().isNotEmpty ? pipeline.summary.trim() : base.summary;
+
+  return PhotoMemoryFields(
+    summary: summary,
+    content: pipeline.originalText,
+    entities: mergedEntities,
+    category: workTypeCategory(pipeline.workType),
+    subCategory: workTypeSubCategoryLabel(pipeline.workType, localeCode: localeCode),
+  );
 }
 
 

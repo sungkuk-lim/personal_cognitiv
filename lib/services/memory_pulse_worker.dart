@@ -6,6 +6,7 @@ import 'package:workmanager/workmanager.dart';
 
 import '../core/prefs.dart';
 import '../models/memory.dart';
+import '../services/local_memory_store.dart';
 import '../services/memory_pulse_service.dart';
 import 'notification_service.dart';
 
@@ -46,10 +47,24 @@ class MemoryPulseWorker {
     if (!next.isAfter(now)) {
       next = next.add(const Duration(days: 1));
     }
+    final memories = _loadSnapshotMemories(prefs);
+    final offer = buildDailyMemoryPulse(memories, localeCode: locale);
     await NotificationService.instance.scheduleDailyPulse(
       scheduledDate: next,
       localeCode: locale,
+      title: offer?.title,
+      body: offer?.subtitle,
     );
+  }
+
+  static List<Memory> _loadSnapshotMemories(SharedPreferences prefs) {
+    final raw = prefs.getString(prefPulseMemorySnapshot);
+    if (raw == null || raw.isEmpty) {
+      return LocalMemoryStore(prefs).loadAll();
+    }
+    return (jsonDecode(raw) as List<dynamic>)
+        .map((e) => Memory.fromMap(Map<String, dynamic>.from(e as Map)))
+        .toList();
   }
 
   static Future<void> saveMemorySnapshot(SharedPreferences prefs, List<Memory> memories) async {

@@ -5,8 +5,12 @@ import 'ocr_utils.dart';
 
 /// 상세 시트·편집 다이얼로그에 보이는 본문.
 String memoryEditDisplayBody(Memory memory, {required String graphMarkerLabel}) {
-  final parts = splitMemoryBodyForDisplay(memory, graphMarkerLabel: graphMarkerLabel);
-  if (parts.mainText.trim().isNotEmpty) return parts.mainText.trim();
+  final content = memory.content.trim();
+  if (content.isNotEmpty) {
+    final parts = splitMemoryBodyForDisplay(memory, graphMarkerLabel: graphMarkerLabel);
+    if (parts.mainText.trim().isNotEmpty) return parts.mainText.trim();
+    return content;
+  }
   return memoryDetailBodyTextFromRaw(memory).trim();
 }
 
@@ -16,8 +20,16 @@ Memory applyMemoryContentEdit({
   required String newMainText,
   required String previousBodyText,
   required String graphMarkerLabel,
+  String localeCode = 'ko',
 }) {
   final trimmed = newMainText.trim();
+  final hadContent = memory.content.trim().isNotEmpty;
+
+  // 실수로 본문을 비우는 저장을 막습니다.
+  if (trimmed.isEmpty && hadContent) {
+    return memory;
+  }
+
   final parts = splitMemoryBodyForDisplay(memory, graphMarkerLabel: graphMarkerLabel);
   final content = parts.appendixText != null && parts.appendixText!.trim().isNotEmpty
       ? '$trimmed\n${parts.appendixText!.trim()}'

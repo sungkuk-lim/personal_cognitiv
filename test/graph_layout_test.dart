@@ -100,6 +100,89 @@ void main() {
     expect(group, {hubId, memA, memB});
   });
 
+  test('initialGraphPositions places satellites in tree under memory hub', () {
+    final nodes = [
+      GraphNodeData(
+        id: 'memory_m1',
+        title: '허브',
+        subtitle: '',
+        color: Colors.red,
+        kind: GraphNodeKind.memory,
+        size: const Size(90, 90),
+        layoutClusterId: 'c1',
+      ),
+      GraphNodeData(
+        id: 'person_p1',
+        title: '민수',
+        subtitle: '',
+        color: Colors.blue,
+        kind: GraphNodeKind.person,
+        size: const Size(70, 70),
+        layoutClusterId: 'c1',
+      ),
+      GraphNodeData(
+        id: 'place_l1',
+        title: '카페',
+        subtitle: '',
+        color: Colors.teal,
+        kind: GraphNodeKind.place,
+        size: const Size(70, 70),
+        layoutClusterId: 'c1',
+      ),
+    ];
+    final edges = [
+      GraphEdgeData(fromId: 'memory_m1', toId: 'person_p1', color: Colors.grey),
+      GraphEdgeData(fromId: 'memory_m1', toId: 'place_l1', color: Colors.grey),
+    ];
+    final pos = initialGraphPositions(nodes, edges, const Size(1200, 900));
+    final hub = pos['memory_m1']!;
+    final person = pos['person_p1']!;
+    final place = pos['place_l1']!;
+    expect(person.dy, greaterThan(hub.dy));
+    expect(place.dy, greaterThan(hub.dy));
+    // 같은 깊이(행)에 나란히
+    expect((person.dy - place.dy).abs(), lessThan(1.0));
+  });
+
+  test('mergeStoredGraphPositions keeps satellites relative to moved hub', () {
+    final nodes = [
+      GraphNodeData(
+        id: 'memory_m1',
+        title: '허브',
+        subtitle: '',
+        color: Colors.red,
+        kind: GraphNodeKind.memory,
+        size: const Size(90, 90),
+        layoutClusterId: 'c1',
+      ),
+      GraphNodeData(
+        id: 'person_p1',
+        title: '민수',
+        subtitle: '',
+        color: Colors.blue,
+        kind: GraphNodeKind.person,
+        size: const Size(70, 70),
+        layoutClusterId: 'c1',
+      ),
+    ];
+    final edges = [
+      GraphEdgeData(fromId: 'memory_m1', toId: 'person_p1', color: Colors.grey),
+    ];
+    final defaults = {
+      'memory_m1': const Offset(100, 100),
+      'person_p1': const Offset(100, 210),
+    };
+    final stored = {'memory_m1': const Offset(400, 300)};
+    final merged = mergeStoredGraphPositions(
+      nodes: nodes,
+      edges: edges,
+      defaults: defaults,
+      stored: stored,
+    );
+    expect(merged['memory_m1'], const Offset(400, 300));
+    expect(merged['person_p1'], const Offset(400, 410));
+  });
+
   test('cafe friend memory graph hides satellites already in hub title', () {
     final memory = Memory(
       id: 'cafe',

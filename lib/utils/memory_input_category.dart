@@ -54,6 +54,15 @@ const List<MemoryInputCategory> memoryInputCategories = [
     iconName: 'friend',
   ),
   MemoryInputCategory(
+    id: 'pet',
+    labelKo: '반려견/반려묘',
+    labelEn: 'Pets',
+    memoryCategory: 'Social',
+    subCategoryKo: '반려견/반려묘',
+    subCategoryEn: 'Pets',
+    iconName: 'pet',
+  ),
+  MemoryInputCategory(
     id: 'company',
     labelKo: '회사',
     labelEn: 'Work',

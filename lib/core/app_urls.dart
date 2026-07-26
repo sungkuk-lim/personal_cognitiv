@@ -1,10 +1,11 @@
 /// 상용 배포용 공개 URL — `--dart-define=PRIVACY_POLICY_URL=...` 로 덮어쓸 수 있습니다.
 ///
-/// GitHub Pages: 조직/계정 `theNext-modamnet` (GitHub는 `_` 불가 → 하이픈 사용)
-/// 저장소 `personal_cognitiv` 기준.
+/// Soft launch 기본값 = 현재 동작 중인 GitHub Pages (`sungkuk-lim`).
+/// 조직 `theNext-modamnet` 이전 후에는 dart-define 또는 이 기본값을 교체하세요.
+/// 자세한 절차: `docs/GITHUB_PAGES.md`
 abstract final class AppUrls {
   static const String _pagesBase =
-      'https://thenext-modamnet.github.io/personal_cognitiv';
+      'https://sungkuk-lim.github.io/personal_cognitiv';
 
   static const String termsOfService = String.fromEnvironment(
     'TERMS_OF_SERVICE_URL',

@@ -109,6 +109,7 @@ abstract final class AppGraphColors {
   static const event = Color(0xFF673AB7);
   static const content = Color(0xFF42A5F5);
   static const interest = Color(0xFFFF9800);
+  static const pet = Color(0xFF8D6E63);
   static const food = Color(0xFFFF5722);
   static const hobby = Color(0xFF009688);
   static const organization = Color(0xFF455A64);

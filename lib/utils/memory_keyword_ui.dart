@@ -4,38 +4,87 @@ import '../core/app_theme.dart';
 import '../models/memory.dart';
 import 'entity_canonical.dart';
 import 'korean_person_names.dart';
+import 'memory_entity_edit.dart';
 import 'memory_entity_extract.dart';
+import 'memory_entity_cache.dart';
 import 'memory_participation_extract.dart';
+import 'medical_entity_lexicon.dart';
 import 'ocr_utils.dart';
 import 'photo_memory_format.dart';
 
-enum MemoryKeywordKind { person, place, event, interest, activity, food, organization, tag }
+enum MemoryKeywordKind { person, pet, place, event, interest, activity, food, organization, tag }
 
 MemoryKeywordKind classifyKeyword(String keyword, Memory memory, {String localeCode = 'ko'}) {
   final k = keyword.trim();
   if (k.isEmpty) return MemoryKeywordKind.tag;
+  if (isMedicalGraphNoisePhrase(k)) return MemoryKeywordKind.tag;
 
-  final bundle = extractMemoryEntities(memory, localeCode: localeCode);
+  final bundle = MemoryEntityCache.bundle(memory, localeCode: localeCode);
   bool matches(String label) => entityLabelMatchesKeyword(label, k);
 
-  if (isSelfPersonLabel(k, localeCode) || bundle.people.any(matches)) {
-    if (isLikelyKoreanPersonName(k) || isFamilyRelationTerm(k) || bundle.people.any(matches)) {
-      return MemoryKeywordKind.person;
+  // 0) 의료 시설·진료과 — 장소(물리적 위치)로 우선.
+  if (isMedicalPlaceLikeLabel(k)) return MemoryKeywordKind.place;
+  if (bundle.places.any(matches) && isMedicalPlaceLikeLabel(k)) return MemoryKeywordKind.place;
+  for (final place in bundle.places) {
+    if (matches(place) && (isMedicalPlaceLikeLabel(place) || isMedicalFacilityLabel(place))) {
+      return MemoryKeywordKind.place;
     }
   }
-  if (bundle.places.any(matches) || looksLikeKoreanPlaceName(k)) return MemoryKeywordKind.place;
+  for (final org in bundle.organizations) {
+    if (matches(org) && isMedicalFacilityLabel(org)) return MemoryKeywordKind.place;
+  }
+
+  // 1) 번들에 이미 분류된 항목 우선 (가장 신뢰도 높음).
+  // 인명·호칭은 장소 번들보다 먼저 — 「정준호」가 places에 섞여도 사람으로.
+  if (isSelfPersonLabel(k, localeCode) ||
+      bundle.people.any(matches) ||
+      isFamilyRelationTerm(k) ||
+      looksLikePersonNameEndingInDong(k) ||
+      looksLikePersonNameEndingInHo(k) ||
+      (isLikelyKoreanPersonName(k) && !isGraphVenueToken(k) && !isMedicalPlaceLikeLabel(k))) {
+    return MemoryKeywordKind.person;
+  }
+  if (bundle.pets.any(matches) ||
+      isLikelyPetNameInContext(k, '${memory.summary}\n${memory.content}')) {
+    return MemoryKeywordKind.pet;
+  }
+  if (bundle.places.any(matches) && !isPersonLabelNotPlace(k)) {
+    return MemoryKeywordKind.place;
+  }
   if (bundle.organizations.any(matches)) return MemoryKeywordKind.organization;
   if (bundle.events.any(matches)) return MemoryKeywordKind.event;
   if (bundle.interests.any(matches)) return MemoryKeywordKind.interest;
   if (bundle.food.any(matches)) return MemoryKeywordKind.food;
-  if (bundle.activities.any(matches) || bundle.hobbies.any(matches)) return MemoryKeywordKind.activity;
+  if (bundle.activities.any(matches) || bundle.hobbies.any(matches)) {
+    return MemoryKeywordKind.activity;
+  }
+
+  // 2) 인물 패턴 — 장소·의료 토큰보다 뒤.
+  if (isMedicalNonPersonToken(k)) {
+    if (isMedicalPlaceLikeLabel(k)) return MemoryKeywordKind.place;
+    return MemoryKeywordKind.tag;
+  }
+  if (isFamilyRelationTerm(k)) return MemoryKeywordKind.person;
+  if (looksLikePersonNameEndingInDong(k) || looksLikePersonNameEndingInHo(k)) {
+    return MemoryKeywordKind.person;
+  }
+  if (isLikelyKoreanPersonName(k) && !looksLikeKoreanPlaceName(k) && !isGraphVenueToken(k)) {
+    return MemoryKeywordKind.person;
+  }
+
+  // 3) 장소 패턴 — 인물이 아닐 때만.
+  if (looksLikeKoreanPlaceName(k) && !isLikelyKoreanPersonName(k) && !isPersonLabelNotPlace(k)) {
+    return MemoryKeywordKind.place;
+  }
 
   for (final entity in userVisibleEntityLabels(memory, localeCode: localeCode)) {
     if (!entityLabelMatchesKeyword(entity, k)) continue;
-    if (isLikelyKoreanPersonName(k) || isLikelyKoreanPersonName(entity)) {
+    if (isLikelyKoreanPersonName(entity) || isLikelyKoreanPersonName(k)) {
       return MemoryKeywordKind.person;
     }
-    if (looksLikeKoreanPlaceName(entity)) return MemoryKeywordKind.place;
+    if (looksLikeKoreanPlaceName(entity) && !isLikelyKoreanPersonName(entity)) {
+      return MemoryKeywordKind.place;
+    }
   }
 
   for (final person in bundle.people) {
@@ -46,14 +95,19 @@ MemoryKeywordKind classifyKeyword(String keyword, Memory memory, {String localeC
   }
 
   const placeSuffixes = [
-    '교', '댐', '산', '봉', '령', '고개', '강', '천', '호', '해변', '해수욕장', '공원', '시장', '역', '터널', '로', '길', '동', '읍', '면', '시', '군', '구',
+    '교', '댐', '산', '봉', '령', '고개', '강', '천', '호', '해변', '해수욕장', '공원', '시장', '역', '터널', '로', '길', '읍', '면', '시', '군', '구',
   ];
-  if (placeSuffixes.any(k.endsWith)) return MemoryKeywordKind.place;
+  // 「동」「호」는 인명(홍길동·정준호)과 겹치므로 인명 가드 후 장소로.
+  if (placeSuffixes.any(k.endsWith) && !isPersonLabelNotPlace(k)) {
+    return MemoryKeywordKind.place;
+  }
+  if (k.endsWith('동') && k.length >= 3 && !looksLikePersonNameEndingInDong(k)) {
+    return MemoryKeywordKind.place;
+  }
 
   if (keyword.length >= 2 &&
       keyword.length <= 4 &&
-      RegExp(r'^[가-힣]+$').hasMatch(keyword) &&
-      !placeSuffixes.any(keyword.endsWith)) {
+      RegExp(r'^[가-힣]+$').hasMatch(keyword)) {
     if (memory.content.contains('$keyword이') ||
         memory.content.contains('$keyword와') ||
         memory.content.contains('$keyword과') ||
@@ -80,9 +134,14 @@ bool entityLabelMatchesKeyword(String entity, String keyword) {
     return canonicalEntityLabel(e) == canonicalEntityLabel(k);
   }
   if (isLikelyKoreanPersonName(k) || isLikelyKoreanPersonName(e)) {
+    // 인명과 의료시설·진료과는 서로 매칭하지 않음 (정준호 ↔ 성소병원 오매칭 방지).
+    if (isMedicalNonPersonToken(k) || isMedicalNonPersonToken(e) ||
+        isMedicalPlaceLikeLabel(k) || isMedicalPlaceLikeLabel(e)) {
+      return false;
+    }
     return normalizeKoreanPersonName(e) == normalizeKoreanPersonName(k);
   }
-  if (looksLikeKoreanPlaceName(k) || looksLikeKoreanPlaceName(e)) {
+  if (isMedicalPlaceLikeLabel(k) || isMedicalPlaceLikeLabel(e)) {
     return e.contains(k) || k.contains(e);
   }
   return false;
@@ -96,14 +155,17 @@ int memoryKeywordMatchScore(Memory memory, String keyword, {String localeCode = 
   for (final entity in sanitizeEntities(memory.entities)) {
     if (isInternalMemoryEntityTag(entity)) continue;
     if (isPersonPlaceCompositeActivity(entity)) continue;
-    if (!entityLabelReferencedInMemory(entity, memory)) continue;
+    if (!memoryHasManualEntityEdit(memory) && !entityLabelReferencedInMemory(entity, memory)) continue;
     if (entityLabelMatchesKeyword(entity, k)) return 100;
   }
 
-  final bundle = extractMemoryEntities(memory, localeCode: localeCode);
+  final bundle = MemoryEntityCache.bundle(memory, localeCode: localeCode);
   for (final person in bundle.people) {
     if (isSelfPersonLabel(person, localeCode)) continue;
     if (entityLabelMatchesKeyword(person, k)) return 95;
+  }
+  for (final pet in bundle.pets) {
+    if (entityLabelMatchesKeyword(pet, k)) return 93;
   }
   for (final place in bundle.places) {
     if (entityLabelMatchesKeyword(place, k)) return 90;
@@ -147,6 +209,8 @@ IconData iconForKeywordKind(MemoryKeywordKind kind) {
   switch (kind) {
     case MemoryKeywordKind.person:
       return Icons.person_outline_rounded;
+    case MemoryKeywordKind.pet:
+      return Icons.pets_outlined;
     case MemoryKeywordKind.place:
       return Icons.place_outlined;
     case MemoryKeywordKind.event:
@@ -168,6 +232,8 @@ Color colorForKeywordKind(MemoryKeywordKind kind, ColorScheme scheme) {
   switch (kind) {
     case MemoryKeywordKind.person:
       return AppGraphColors.person;
+    case MemoryKeywordKind.pet:
+      return AppGraphColors.pet;
     case MemoryKeywordKind.place:
       return AppGraphColors.place;
     case MemoryKeywordKind.event:
@@ -190,8 +256,23 @@ List<Widget> buildKeywordChips(
   ColorScheme colorScheme, {
   int maxCount = 6,
   void Function(String keyword)? onKeywordTap,
+  String localeCode = 'ko',
 }) {
-  final keywords = userVisibleEntityLabels(memory).take(maxCount).toList();
+  final keywords = displayTagsForMemory(memory, localeCode: localeCode).take(maxCount).toList();
+  return buildKeywordChipsFromLabels(
+    memory,
+    keywords,
+    colorScheme,
+    onKeywordTap: onKeywordTap,
+  );
+}
+
+List<Widget> buildKeywordChipsFromLabels(
+  Memory memory,
+  List<String> keywords,
+  ColorScheme colorScheme, {
+  void Function(String keyword)? onKeywordTap,
+}) {
   if (keywords.isEmpty) return const [];
 
   return keywords.map((keyword) {

@@ -16,9 +16,17 @@
         android:id="@+id/widget_graph_network"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:alpha="0.98"
+        android:alpha="1.0"
         android:contentDescription="@null"
         android:scaleType="centerCrop" />
+
+    <ImageView
+        android:id="@+id/widget_fg_scrim"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@null"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_fg_scrim" />
 
     <LinearLayout
         android:layout_width="match_parent"

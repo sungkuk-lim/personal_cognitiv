@@ -94,6 +94,7 @@ class SearchFilterChipsBar extends StatelessWidget {
       'activity' => (Icons.event_rounded, const Color(0xFF6750A4)),
       'food' => (Icons.restaurant_rounded, Colors.orange.shade600),
       'hobby' => (Icons.interests_rounded, Colors.indigo.shade400),
+      'interest' => (Icons.lightbulb_rounded, Colors.deepPurple.shade400),
       'season' => (Icons.wb_sunny_rounded, Colors.amber.shade700),
       'weather' => (Icons.cloud_rounded, Colors.blueGrey.shade500),
       'photo' => (Icons.photo_rounded, scheme.primary),

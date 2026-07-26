@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../features/graph/graph_chat_save.dart';
 import '../models/memory.dart';
 import '../services/place_lookup_service.dart';
-import 'korean_person_names.dart';
 import 'memory_grouping.dart';
 import 'memory_place_policy.dart';
 import 'ocr_utils.dart';
@@ -98,13 +97,22 @@ String? _addressFromDisplayCoords(
   if (coords == null) return null;
 
   final full = _fullAddressFromCoords(coords, fullAddressCache);
-  if (full != null && full.isNotEmpty) return full;
+  if (full != null && full.isNotEmpty && !_isWeakAddressOnly(full)) return full;
 
   final short = _placeNameFromCoords(coords, placeCache);
   if (short != null && short.isNotEmpty && !isLikelyLotNumber(short) && !isLatLngLabel(short)) {
     return short;
   }
   return null;
+}
+
+bool _isWeakAddressOnly(String address) {
+  final value = address.trim();
+  if (value.isEmpty) return true;
+  if (isLikelyLotNumber(value)) return true;
+  if (RegExp(r'^\d{1,5}(?:-\d{1,5})+\s*$').hasMatch(value)) return true;
+  if (PlaceLookupService.isAddressMissingRoadName(value)) return true;
+  return false;
 }
 
 /// 역지오코딩 결과를 캐시에 저장합니다. (표시용, 비용 없음)
@@ -122,7 +130,11 @@ Future<Map<String, String>> warmPlaceNamesForMemories(
     if (coords == null) continue;
     final key = latLngCacheKey(coords.lat, coords.lng);
     if (!seen.add(key)) continue;
-    if (cache.containsKey(key) && cache[key]!.trim().isNotEmpty) continue;
+    // 이미 의미 있는 장소명이 있으면 유지. 비어있거나 번지/좌표만 있으면 다시 조회.
+    final existing = cache[key]?.trim() ?? '';
+    if (existing.isNotEmpty && !isLikelyLotNumber(existing) && !isLatLngLabel(existing)) {
+      continue;
+    }
 
     final name = await PlaceLookupService.resolvePlaceName(
       coords.lat,
@@ -153,14 +165,16 @@ Future<Map<String, String>> warmPlaceFullAddressesForMemories(
     if (coords == null) continue;
     final key = latLngCacheKey(coords.lat, coords.lng);
     if (!seen.add(key)) continue;
-    if (cache.containsKey(key) && cache[key]!.trim().isNotEmpty) continue;
+    // 이미 상세 주소가 있으면 유지. 비어있거나 번지만 있는 약한 값이면 다시 조회.
+    final existing = cache[key]?.trim() ?? '';
+    if (existing.isNotEmpty && !_isWeakAddressOnly(existing)) continue;
 
     final address = await PlaceLookupService.resolveFullAddress(
       coords.lat,
       coords.lng,
       localeCode: localeCode,
     );
-    if (address != null && address.trim().isNotEmpty) {
+    if (address != null && address.trim().isNotEmpty && !_isWeakAddressOnly(address)) {
       cache[key] = address.trim();
       changed = true;
     }
@@ -203,7 +217,7 @@ String displayPlaceAddress(
   }
 
   final pinned = pinnedPlaceLabelForMemory(memory, localeCode: localeCode);
-  if (pinned != null && pinned.isNotEmpty) return pinned;
+  if (pinned != null && pinned.isNotEmpty && !_isWeakAddressOnly(pinned)) return pinned;
 
   final fromCoords = _addressFromMemoryCoords(
     memory,
@@ -211,10 +225,10 @@ String displayPlaceAddress(
     fullAddressCache,
     localeCode: localeCode,
   );
-  if (fromCoords != null) return fromCoords;
+  if (fromCoords != null && !_isWeakAddressOnly(fromCoords)) return fromCoords;
 
   final fromEntity = placeLabelFromEntities(memory);
-  if (fromEntity != null) return fromEntity;
+  if (fromEntity != null && !isLikelyLotNumber(fromEntity)) return fromEntity;
 
   final summary = memory.summary.trim();
   if (summary.contains('·')) {
@@ -243,7 +257,7 @@ String _displayPlaceAddressForGraphNote(
   if (fromCoords != null) return fromCoords;
 
   final pinned = pinnedPlaceLabelForMemory(memory, localeCode: localeCode);
-  if (pinned != null && pinned.isNotEmpty) return pinned;
+  if (pinned != null && pinned.isNotEmpty && !_isWeakAddressOnly(pinned)) return pinned;
 
   final fromEntity = placeLabelFromEntities(memory);
   if (fromEntity != null) return fromEntity;

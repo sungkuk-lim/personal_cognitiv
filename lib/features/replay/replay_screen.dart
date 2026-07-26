@@ -1,6 +1,5 @@
 import 'dart:io';
-import 'dart:ui';
-
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -9,13 +8,12 @@ import '../../core/replay_config.dart';
 import '../../features/graph/graph_chat_save.dart';
 import '../../features/memory/memory_detail_presets.dart';
 import '../../features/memory/memory_detail_sheet.dart';
-import '../../features/memory/memory_media_hero.dart';
 import '../../features/replay/replay_gallery_viewer.dart';
-import '../../features/replay/replay_parallax.dart';
 import '../../models/memory.dart';
 import '../../providers/app_providers.dart';
 import '../../providers/memory_notifier.dart';
 import '../../utils/graph_keyword_focus.dart';
+import '../../utils/graph_meaning.dart';
 import '../../utils/graph_satellite_chips.dart';
 import '../../utils/memory_image_memos.dart';
 import '../../utils/memory_image_paths.dart';
@@ -25,6 +23,7 @@ import 'replay_coach_mark.dart';
 import 'replay_insight_cards.dart';
 import 'replay_insight_section.dart';
 import '../pulse/memory_pulse_section.dart';
+import '../../widgets/app_empty_state.dart';
 
 /// 월별로 기억을 묶어 사진 썸네일과 함께 보여줍니다.
 class ReplayScreen extends ConsumerWidget {
@@ -66,29 +65,47 @@ class ReplayTimelineView extends ConsumerStatefulWidget {
   ConsumerState<ReplayTimelineView> createState() => _ReplayTimelineViewState();
 }
 
-class _ReplayTimelineViewState extends ConsumerState<ReplayTimelineView> with ReplayParallaxController {
+class _ReplayTimelineViewState extends ConsumerState<ReplayTimelineView> {
   final _scrollController = ScrollController();
+  late List<MapEntry<String, List<Memory>>> _months;
+  late List<ReplayInsightCard> _insightCards;
 
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScroll);
+    _rebuildSections();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        refreshParallaxSections(context);
-        showReplayCoachMarkIfNeeded(context, ref);
-      }
+      if (mounted) showReplayCoachMarkIfNeeded(context, ref);
     });
   }
 
   @override
+  void didUpdateWidget(covariant ReplayTimelineView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.memories != widget.memories || oldWidget.localeCode != widget.localeCode) {
+      _rebuildSections();
+    }
+  }
+
+  void _rebuildSections() {
+    final sortedMemories = [...widget.memories]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final grouped = <String, List<Memory>>{};
+    for (final memory in sortedMemories) {
+      final key = widget.localeCode == 'ko'
+          ? DateFormat('yyyy년 M월', 'ko').format(memory.createdAt)
+          : DateFormat('MMMM yyyy', 'en').format(memory.createdAt);
+      grouped.putIfAbsent(key, () => []).add(memory);
+    }
+    _months = grouped.entries.toList()
+      ..sort((a, b) => b.value.first.createdAt.compareTo(a.value.first.createdAt));
+    _insightCards = buildReplayInsightCards(widget.memories, localeCode: widget.localeCode);
+  }
+
+  @override
   void dispose() {
-    _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
     super.dispose();
   }
-
-  void _onScroll() => refreshParallaxSections(context);
 
   void _openMemory(BuildContext context, Memory memory) {
     final mode = ref.read(replayViewModeProvider);
@@ -127,32 +144,18 @@ class _ReplayTimelineViewState extends ConsumerState<ReplayTimelineView> with Re
   Widget build(BuildContext context) {
     ref.watch(replayViewModeProvider);
     if (widget.memories.isEmpty) {
-      return Center(child: Text(widget.emptyLabel));
+      return AppEmptyState(
+        icon: Icons.history_rounded,
+        title: widget.emptyLabel,
+        subtitle: ref.watch(translationsProvider)['empty_hint'],
+      );
     }
 
-    final sortedMemories = [...widget.memories]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final grouped = <String, List<Memory>>{};
-    for (final memory in sortedMemories) {
-      final key = widget.localeCode == 'ko'
-          ? DateFormat('yyyy년 M월', 'ko').format(memory.createdAt)
-          : DateFormat('MMMM yyyy', 'en').format(memory.createdAt);
-      grouped.putIfAbsent(key, () => []).add(memory);
-    }
-
-    final months = grouped.entries.toList()
-      ..sort((a, b) => b.value.first.createdAt.compareTo(a.value.first.createdAt));
-
-    final insightCards = buildReplayInsightCards(widget.memories, localeCode: widget.localeCode);
+    final months = _months;
+    final insightCards = _insightCards;
 
     return RefreshIndicator(
       onRefresh: () => ref.read(memoryListProvider.notifier).reload(),
-      child: NotificationListener<ScrollNotification>(
-      onNotification: (notification) {
-        if (notification is ScrollUpdateNotification || notification is ScrollEndNotification) {
-          refreshParallaxSections(context);
-        }
-        return false;
-      },
       child: ListView.builder(
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
@@ -173,80 +176,91 @@ class _ReplayTimelineViewState extends ConsumerState<ReplayTimelineView> with Re
           final monthIndex = insightCards.isNotEmpty ? index - 2 : index - 1;
           final month = months[monthIndex].key;
           final items = months[monthIndex].value;
-          final sectionKey = keyForSection(monthIndex);
 
-          return ReplayParallaxSection(
-            key: sectionKey,
-            sectionKey: index,
-            header: _ReplayMonthHeader(title: month, memoryCount: items.length),
-            content: Card(
-              margin: const EdgeInsets.only(bottom: 16),
-              clipBehavior: Clip.antiAlias,
-              child: ExpansionTile(
-                initiallyExpanded: monthIndex == 0,
-                title: Text(
-                  widget.localeCode == 'ko' ? '기억 ${items.length}개' : '${items.length} memories',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                ),
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(5, 0, 5, 16),
-                    child: Column(
-                      children: items
-                          .map(
-                            (memory) {
-                              final thumb = primaryMediaThumbForMemoryId(
-                                memory.id,
-                                widget.imagePaths,
-                                widget.videoPaths,
-                              );
-                              final photoCount = imageCountForMemoryId(memory.id, widget.imagePaths);
-                              final hasVideo = memoryHasVideo(memory.id, widget.videoPaths);
-                              final memo = displayMemoForMemory(
-                                memory,
-                                widget.imageMemos,
-                                photoCount: photoCount,
-                              );
-                              return Padding(
-                                padding: const EdgeInsets.only(bottom: 8),
-                                child: _ReplayTile(
-                                  memory: memory,
-                                  imagePath: thumb,
-                                  photoCount: photoCount,
-                                  photoCountLabel: photoCount > 1 ? _photoCountLabel(photoCount) : null,
-                                  memo: memo,
-                                  hasVideo: hasVideo,
-                                  localeCode: widget.localeCode,
-                                  onTap: () => _openMemory(context, memory),
-                                  onLongPress: () => showMemoryFocusPreviewSheet(
-                                    context,
-                                    ref,
-                                    memory: memory,
-                                    imagePath: thumb,
-                                    hasVideo: hasVideo,
-                                    photoCount: photoCount,
-                                  ),
-                                  onKeywordTap: (keyword) => openGraphKeywordFocus(ref, keyword),
-                                  onOpenGraph: () => openGraphForMemory(ref, memory),
-                                ),
-                              );
-                            },
-                          )
-                          .toList(),
-                    ),
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ReplayMonthHeader(title: month, memoryCount: items.length),
+              Card(
+                margin: const EdgeInsets.only(bottom: 16),
+                clipBehavior: Clip.antiAlias,
+                child: ExpansionTile(
+                  initiallyExpanded: monthIndex == 0,
+                  title: Text(
+                    widget.localeCode == 'ko' ? '기억 ${items.length}개' : '${items.length} memories',
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                   ),
-                ],
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(5, 0, 5, 16),
+                      child: Column(
+                        children: [
+                          for (var itemIndex = 0; itemIndex < items.length; itemIndex++)
+                            Padding(
+                              padding: EdgeInsets.only(bottom: itemIndex == items.length - 1 ? 0 : 8),
+                              child: _buildReplayTile(items[itemIndex]),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ],
           );
         },
       ),
-    ),
     );
   }
 
-  String _photoCountLabel(int count) {
-    return widget.localeCode == 'ko' ? '$count장' : '$count photos';
+  Widget _buildReplayTile(Memory memory) {
+    final photoPaths = resolvedFullImagePathsForMemoryId(memory.id, widget.imagePaths);
+    final videoPaths = resolvedVideoPathsForMemoryId(memory.id, widget.videoPaths);
+    final photoCount = photoPaths.length;
+    final memo = displayMemoForMemory(memory, widget.imageMemos, photoCount: photoCount);
+    final thumb = primaryMediaThumbForMemoryId(memory.id, widget.imagePaths, widget.videoPaths);
+    return _ReplayTile(
+      memory: memory,
+      photoPaths: photoPaths,
+      videoPaths: videoPaths,
+      memo: memo,
+      localeCode: widget.localeCode,
+      onTap: () => _openMemory(context, memory),
+      onLongPress: () => showMemoryFocusPreviewSheet(
+        context,
+        ref,
+        memory: memory,
+        imagePath: thumb,
+        hasVideo: videoPaths.isNotEmpty,
+        photoCount: photoCount,
+      ),
+      onKeywordTap: (keyword) => openGraphKeywordFocus(ref, keyword),
+      onOpenGraph: () => openGraphForMemory(ref, memory),
+      onAddMedia: () => _openMemoryForMedia(memory),
+      onMediaTap: (index) => _openMemoryMediaViewer(memory, initialIndex: index),
+      onMediaLongPress: () => _openMemoryForMedia(memory),
+    );
+  }
+
+  void _openMemoryMediaViewer(Memory memory, {int initialIndex = 0}) {
+    showReplayGalleryViewer(
+      context,
+      memory: memory,
+      imagePaths: widget.imagePaths,
+      imageMemos: widget.imageMemos,
+      videoPaths: widget.videoPaths,
+      initialIndex: initialIndex,
+      swipeHint: ref.read(translationsProvider)['gallery_swipe_hint'],
+    );
+  }
+
+  void _openMemoryForMedia(Memory memory) {
+    showMemoryDetailSheet(
+      context,
+      memory,
+      imagePaths: widget.imagePaths,
+      options: MemoryDetailPresets.full,
+    );
   }
 }
 
@@ -304,146 +318,153 @@ class _ReplayMonthHeader extends StatelessWidget {
   }
 }
 
+class _ReplayMedia {
+  const _ReplayMedia({this.imagePath, this.isVideo = false, required this.accent});
+
+  final String? imagePath;
+  final bool isVideo;
+  final Color accent;
+}
+
 class _ReplayTile extends ConsumerWidget {
   const _ReplayTile({
     required this.memory,
-    this.imagePath,
-    this.photoCount = 0,
-    this.photoCountLabel,
+    this.photoPaths = const [],
+    this.videoPaths = const [],
     this.memo = '',
-    this.hasVideo = false,
     this.localeCode = 'ko',
     this.onTap,
     this.onLongPress,
     this.onKeywordTap,
     this.onOpenGraph,
+    this.onAddMedia,
+    this.onMediaTap,
+    this.onMediaLongPress,
   });
 
   final Memory memory;
-  final String? imagePath;
-  final int photoCount;
-  final String? photoCountLabel;
+  final List<String> photoPaths;
+  final List<String> videoPaths;
   final String memo;
-  final bool hasVideo;
   final String localeCode;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final void Function(String keyword)? onKeywordTap;
   final VoidCallback? onOpenGraph;
+  final VoidCallback? onAddMedia;
+  final void Function(int index)? onMediaTap;
+  final VoidCallback? onMediaLongPress;
+
+  List<_ReplayMedia> _mediaItems() {
+    final items = <_ReplayMedia>[];
+    for (final p in photoPaths) {
+      items.add(_ReplayMedia(imagePath: p, accent: memory.categoryColor));
+    }
+    for (final v in videoPaths) {
+      final thumb = thumbPathForVideoFile(v);
+      items.add(_ReplayMedia(
+        imagePath: (!kIsWeb && File(thumb).existsSync()) ? thumb : (kIsWeb ? thumb : null),
+        isVideo: true,
+        accent: memory.categoryColor,
+      ));
+    }
+    return items;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final hasImage = imagePath != null && File(imagePath!).existsSync();
-    final title = memory.summary.isNotEmpty ? memory.summary : memory.content;
-    final t = ref.watch(translationsProvider);
+    final theme = Theme.of(context);
+    final title = memoryDisplayTitle(memory, localeCode: localeCode);
+    final t = ref.read(translationsProvider);
     final satellites = buildGraphSatelliteChips(
       memory,
-      Theme.of(context).colorScheme,
+      theme.colorScheme,
       localeCode: localeCode,
-      maxCount: 5,
+      maxCount: 4,
       onChipTap: (keyword, _) => onKeywordTap?.call(keyword),
     );
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      margin: EdgeInsets.zero,
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(5, 5, 5, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(10),
-                child: Stack(
-                  children: [
-                    if (hasImage)
-                      MemoryMediaHeroImage(
-                        memoryId: memory.id,
-                        photoIndex: 0,
-                        path: imagePath!,
-                        height: 140,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                      )
-                    else
-                      Container(
-                        height: 140,
-                        width: double.infinity,
-                        color: memory.categoryColor.withValues(alpha: 0.2),
-                        child: Icon(Icons.auto_awesome, color: memory.categoryColor),
-                      ),
-                    if (photoCount > 1)
-                      Positioned(
-                        right: 6,
-                        top: 6,
-                        child: BouncingPhotoCountBadge(
-                          count: photoCount,
-                          label: photoCountLabel,
-                          style: BouncingPhotoCountBadgeStyle.pill,
-                        ),
-                      ),
-                    if (hasVideo)
-                      Positioned(
-                        right: 6,
-                        bottom: 6,
-                        child: _ReplayVideoBadge(accent: memory.categoryColor),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (memo.isNotEmpty) ...[
+    final media = _mediaItems();
+
+    return RepaintBoundary(
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        margin: EdgeInsets.zero,
+        child: InkWell(
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
                 Text(
-                  memo,
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    height: 1.35,
-                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.8),
-                  ),
+                  style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(height: 4),
-              ],
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-              if (satellites.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Wrap(spacing: 4, runSpacing: 4, children: satellites),
-              ],
-              if (onOpenGraph != null) ...[
-                const SizedBox(height: 8),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: onOpenGraph,
-                    icon: const Icon(Icons.hub_outlined, size: 16),
-                    label: Text(t['graph'] ?? '관계망'),
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                if (memo.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    memo,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      height: 1.3,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
                     ),
                   ),
+                ],
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 156,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: _ReplayGraphHalf(memory: memory, localeCode: localeCode),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: media.isEmpty
+                            ? _ReplayMediaUploadHint(
+                                label: t['replay_media_upload_hint']!,
+                                accent: memory.categoryColor,
+                                onTap: onAddMedia,
+                              )
+                            : _ReplayMediaGrid(
+                                media: media,
+                                totalCount: media.length,
+                                onAddMedia: onAddMedia,
+                                onMediaTap: onMediaTap,
+                                onMediaLongPress: onMediaLongPress,
+                              ),
+                      ),
+                    ],
+                  ),
                 ),
-                if (onLongPress != null && t['replay_graph_long_press_hint'] != null)
-                  Padding(
-                    padding: const EdgeInsets.only(left: 4, bottom: 2),
-                    child: Text(
-                      t['replay_graph_long_press_hint']!,
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.45),
+                if (satellites.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 4, runSpacing: 4, children: satellites),
+                ],
+                if (onOpenGraph != null) ...[
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: onOpenGraph,
+                      icon: const Icon(Icons.hub_outlined, size: 16),
+                      label: Text(t['graph'] ?? '관계망'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       ),
                     ),
                   ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),
@@ -451,48 +472,301 @@ class _ReplayTile extends ConsumerWidget {
   }
 }
 
-class _ReplayVideoBadge extends StatelessWidget {
-  const _ReplayVideoBadge({required this.accent});
+/// 회상 카드 왼쪽 절반 — 해당 기억의 미니 관계도.
+class _ReplayGraphHalf extends StatelessWidget {
+  const _ReplayGraphHalf({required this.memory, required this.localeCode});
 
-  final Color accent;
+  final Memory memory;
+  final String localeCode;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 4, sigmaY: 4),
-        child: Container(
-          height: 24,
-          padding: const EdgeInsets.symmetric(horizontal: 7),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(12),
-            gradient: LinearGradient(
-              colors: [
-                Colors.black.withValues(alpha: 0.62),
-                accent.withValues(alpha: 0.56),
-              ],
+      borderRadius: BorderRadius.circular(10),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: theme.colorScheme.outlineVariant.withValues(alpha: 0.4)),
+        ),
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: Padding(
+            padding: const EdgeInsets.all(6),
+            child: SizedBox(
+              width: 220,
+              child: MemoryFocusMiniGraph(memory: memory, localeCode: localeCode),
             ),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.33), width: 0.7),
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.play_arrow_rounded, color: Colors.white, size: 14),
-              SizedBox(width: 1),
-              Text(
-                'VID',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.3,
-                ),
-              ),
-            ],
           ),
         ),
       ),
     );
   }
+}
+
+/// 회상 카드 오른쪽 절반 — 2행 2열 미디어 그리드.
+class _ReplayMediaGrid extends StatelessWidget {
+  const _ReplayMediaGrid({
+    required this.media,
+    required this.totalCount,
+    this.onAddMedia,
+    this.onMediaTap,
+    this.onMediaLongPress,
+  });
+
+  final List<_ReplayMedia> media;
+  final int totalCount;
+  final VoidCallback? onAddMedia;
+  final void Function(int index)? onMediaTap;
+  final VoidCallback? onMediaLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    Widget cell(int index) {
+      if (index >= media.length) {
+        // 첫 번째 빈 칸은 미디어 추가 버튼, 나머지는 빈 셀.
+        final isFirstEmpty = index == media.length;
+        return _ReplayMediaEmptyCell(
+          onAddMedia: isFirstEmpty ? onAddMedia : null,
+        );
+      }
+      final extra = (index == 3 && totalCount > 4) ? totalCount - 4 : 0;
+      return _ReplayMediaCell(
+        media: media[index],
+        extraCount: extra,
+        onTap: () => onMediaTap?.call(index),
+        onLongPress: onMediaLongPress,
+      );
+    }
+
+    return Column(
+      children: [
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(child: cell(0)),
+              const SizedBox(width: 4),
+              Expanded(child: cell(1)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: Row(
+            children: [
+              Expanded(child: cell(2)),
+              const SizedBox(width: 4),
+              Expanded(child: cell(3)),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ReplayMediaCell extends StatelessWidget {
+  const _ReplayMediaCell({
+    required this.media,
+    this.extraCount = 0,
+    this.onTap,
+    this.onLongPress,
+  });
+
+  final _ReplayMedia media;
+  final int extraCount;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+
+  @override
+  Widget build(BuildContext context) {
+    final path = media.imagePath;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (path != null)
+            kIsWeb
+                ? Image.network(
+                    path,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _fallback(),
+                  )
+                : Image.file(
+                    File(path),
+                    fit: BoxFit.cover,
+                    cacheWidth: 240,
+                    errorBuilder: (_, _, _) => _fallback(),
+                  )
+          else
+            _fallback(),
+          if (media.isVideo)
+            const Center(
+              child: Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 26),
+            ),
+          if (extraCount > 0)
+            ColoredBox(
+              color: Colors.black.withValues(alpha: 0.5),
+              child: Center(
+                child: Text(
+                  '+$extraCount',
+                  style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+          Positioned.fill(
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onTap,
+                onLongPress: onLongPress,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _fallback() {
+    return ColoredBox(
+      color: media.accent.withValues(alpha: 0.18),
+      child: Icon(
+        media.isVideo ? Icons.videocam_rounded : Icons.image_outlined,
+        color: media.accent,
+        size: 22,
+      ),
+    );
+  }
+}
+
+class _ReplayMediaEmptyCell extends StatelessWidget {
+  const _ReplayMediaEmptyCell({this.onAddMedia});
+
+  final VoidCallback? onAddMedia;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final canAdd = onAddMedia != null;
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: canAdd ? 0.45 : 0.3),
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onAddMedia,
+        borderRadius: BorderRadius.circular(8),
+        child: canAdd
+            ? Center(
+                child: Icon(
+                  Icons.add_photo_alternate_outlined,
+                  color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.8),
+                  size: 22,
+                ),
+              )
+            : const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+/// 미디어가 없을 때 오른쪽 절반에 표시되는 업로드 안내.
+class _ReplayMediaUploadHint extends StatelessWidget {
+  const _ReplayMediaUploadHint({
+    required this.label,
+    required this.accent,
+    this.onTap,
+  });
+
+  final String label;
+  final Color accent;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: DottedBorderBox(
+          color: theme.colorScheme.outlineVariant,
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add_photo_alternate_outlined, color: accent, size: 28),
+                const SizedBox(height: 8),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 3,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w600,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 점선 테두리 컨테이너 (업로드 힌트용).
+class DottedBorderBox extends StatelessWidget {
+  const DottedBorderBox({super.key, required this.child, required this.color});
+
+  final Widget child;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _DashedRectPainter(color: color),
+      child: child,
+    );
+  }
+}
+
+class _DashedRectPainter extends CustomPainter {
+  _DashedRectPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(10),
+    );
+    final path = Path()..addRRect(rrect);
+    const dash = 5.0;
+    const gap = 4.0;
+    for (final metric in path.computeMetrics()) {
+      var distance = 0.0;
+      while (distance < metric.length) {
+        canvas.drawPath(
+          metric.extractPath(distance, distance + dash),
+          paint,
+        );
+        distance += dash + gap;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedRectPainter oldDelegate) => oldDelegate.color != color;
 }

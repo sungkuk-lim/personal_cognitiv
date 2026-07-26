@@ -6,7 +6,7 @@ import 'package:personal_cognitive/features/graph/graph_satellite_tap.dart';
 import 'package:personal_cognitive/models/memory.dart';
 
 void main() {
-  test('rail tap returns personAndPlace when badge has both', () {
+  test('rail tap returns all when badge has person and place', () {
     const center = Offset(100, 100);
     const size = Size(204, 124);
     const badge = '사람 4 · 장소 1';
@@ -23,8 +23,22 @@ void main() {
       nodeSize: size,
       badgeText: badge,
     );
-    expect(upper, GraphSatelliteExpandMode.personAndPlace);
-    expect(lower, GraphSatelliteExpandMode.personAndPlace);
+    expect(upper, GraphSatelliteExpandMode.all);
+    expect(lower, GraphSatelliteExpandMode.all);
+  });
+
+  test('rail tap with person·place·activity expands all', () {
+    const center = Offset(100, 100);
+    const size = Size(204, 124);
+    const badge = '사람 2 · 장소 9 · 활동 1';
+    final rect = memorySatelliteRailRect(center, size);
+    final mode = satelliteModeFromRailTap(
+      canvasPos: Offset(rect.center.dx, rect.top + rect.height * 0.3),
+      nodeCenter: center,
+      nodeSize: size,
+      badgeText: badge,
+    );
+    expect(mode, GraphSatelliteExpandMode.all);
   });
 
   test('tap outside rail returns null', () {

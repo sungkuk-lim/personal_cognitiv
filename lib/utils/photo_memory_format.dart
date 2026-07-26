@@ -49,6 +49,7 @@ String? extractPlaceHintFromOcr(String text) {
     if (isJunkOcrMetaResponse(value) || isGraphMetaContent(value)) return;
     if (isNonPlaceGraphToken(value)) return;
     if (isJunkEntityOrKeyword(value)) return;
+    if (isPersonLabelNotPlace(value)) return;
     if (RegExp(r'(?:연락|집으로|다음날|실망|엉망|없어|행동|의문|이렇게|명이서|놀러)').hasMatch(value)) return;
     if (RegExp(r'\d').hasMatch(value) && !_placeHintAllowsDigits(value)) return;
     if (value.contains('의 ')) return;
@@ -89,7 +90,10 @@ String? extractPlaceHintFromOcr(String text) {
 }
 
 bool peopleNoiseInPlaceHint(String value) {
-  return RegExp(r'(?:참석|보호사|간호사|이동|서충|이렇게|명이서|식구)').hasMatch(value);
+  if (value.contains('명이') || value.contains('명이서') || value.contains('식구')) {
+    return true;
+  }
+  return RegExp(r'(?:참석|보호사|간호사|이동|서충|이렇게)').hasMatch(value);
 }
 
 bool _placeHintAllowsDigits(String value) =>

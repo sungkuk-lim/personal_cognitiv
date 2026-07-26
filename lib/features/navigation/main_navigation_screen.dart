@@ -48,11 +48,14 @@ import '../../utils/memory_video_paths.dart';
 import '../../utils/memory_input_category.dart';
 import '../../utils/memory_place_policy.dart';
 import '../../utils/memory_place_cache.dart';
+import '../../utils/memory_semantic_confirm_hook.dart';
 import '../../utils/photo_memo_format.dart';
 import '../../utils/photo_memory_format.dart';
 import '../../utils/voice_memory_format.dart';
 import '../../services/local_memory_store.dart';
+import '../../providers/care_dictionary_provider.dart';
 import '../../services/memory_entity_reenrich_service.dart';
+import '../../services/memory_capture_pipeline.dart';
 import '../../services/recall_anchor_service.dart';
 import '../../widgets/app_maturity_dialog.dart';
 import '../../widgets/onboarding_sheet.dart';
@@ -74,6 +77,7 @@ class MainNavigationScreen extends ConsumerStatefulWidget {
 
 class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   int _currentIndex = 0;
+  final Set<int> _mountedTabIndices = {0};
   bool _isProcessing = false;
   late stt.SpeechToText _speech;
   VoiceSttEngine? _voiceEngine;
@@ -178,9 +182,34 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     }
     _tabSub = ref.listenManual(mainNavigationTabProvider, (prev, next) {
       if (mounted && next != _currentIndex) {
-        setState(() => _currentIndex = next);
+        _selectTab(next, syncProvider: false);
       }
     });
+  }
+
+  void _selectTab(int index, {bool syncProvider = true}) {
+    setState(() {
+      _currentIndex = index;
+      _mountedTabIndices.add(index);
+    });
+    if (syncProvider) {
+      ref.read(mainNavigationTabProvider.notifier).state = index;
+    }
+  }
+
+  Widget _buildTabChild(int index, Map<String, String> t) {
+    switch (index) {
+      case 0:
+        return MemoryTimeline(onCaptureTap: () => _showCaptureDialog(context, ref, t));
+      case 1:
+        return const CognitiveSearchScreen();
+      case 2:
+        return const RelationshipGraphScreen();
+      case 3:
+        return const ReplayScreen();
+      default:
+        return const SizedBox.shrink();
+    }
   }
 
   void _maybeShowGraphReenrichNotice() {
@@ -223,7 +252,6 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       return;
     }
     BackgroundRecallWorker.register();
-    Future.microtask(LocationPermissionService.requestBackgroundLocationForRecall);
     _recallService = ProactiveRecallService(prefs)..start();
     _recallService!.updateMemories(ref.read(memoryListProvider));
     _memorySub = ref.listenManual(memoryListProvider, (prev, next) {
@@ -243,8 +271,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       if (payload.startsWith('pulse:')) {
         parsePulsePayload(payload, onParsed: (kind, memoryId, entity) {
           if (kind == MemoryPulseKind.personSpotlight && entity != null && entity.isNotEmpty) {
-            setState(() => _currentIndex = 3);
-            ref.read(mainNavigationTabProvider.notifier).state = 3;
+            _selectTab(3);
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
               launchEntityHighlight(context: context, ref: ref, entityLabel: entity);
@@ -257,8 +284,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
             if (match.isEmpty) return;
             final memory = match.first;
             final imagePaths = ref.read(memoryImagePathsProvider);
-            setState(() => _currentIndex = 3);
-            ref.read(mainNavigationTabProvider.notifier).state = 3;
+            _selectTab(3);
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (!mounted) return;
               showMemoryDetailSheet(
@@ -278,8 +304,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       final memory = matches.first;
       final imagePaths = ref.read(memoryImagePathsProvider);
       final videoPaths = ref.read(memoryVideoPathsProvider);
-      setState(() => _currentIndex = 0);
-      ref.read(mainNavigationTabProvider.notifier).state = 0;
+      _selectTab(0);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         showMemoryDetailSheet(
@@ -351,19 +376,15 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     final t = ref.read(translationsProvider);
     switch (target) {
       case AppLaunchTarget.capture:
-        setState(() => _currentIndex = 0);
-        ref.read(mainNavigationTabProvider.notifier).state = 0;
+        _selectTab(0);
         _showCaptureDialog(context, ref, t);
       case AppLaunchTarget.search:
-        setState(() => _currentIndex = 1);
-        ref.read(mainNavigationTabProvider.notifier).state = 1;
+        _selectTab(1);
         _showSearchVoiceDialog(context, ref, t);
       case AppLaunchTarget.open:
-        setState(() => _currentIndex = 0);
-        ref.read(mainNavigationTabProvider.notifier).state = 0;
+        _selectTab(0);
       case AppLaunchTarget.graph:
-        setState(() => _currentIndex = 2);
-        ref.read(mainNavigationTabProvider.notifier).state = 2;
+        _selectTab(2);
       case AppLaunchTarget.none:
         break;
     }
@@ -375,6 +396,8 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final graphLandscapeImmersive =
         _currentIndex == 2 && MediaQuery.orientationOf(context) == Orientation.landscape;
+    final isWeb = kIsWeb;
+    
     return Scaffold(
       appBar: graphLandscapeImmersive
           ? null
@@ -412,36 +435,55 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Column(
+      body: Row(
         children: [
-          if (!graphLandscapeImmersive) const OfflineBanner(),
+          if (isWeb)
+            NavigationRail(
+              selectedIndex: _currentIndex,
+              onDestinationSelected: (i) => _selectTab(i),
+              labelType: NavigationRailLabelType.all,
+              destinations: [
+                NavigationRailDestination(icon: const Icon(Icons.auto_awesome_motion_rounded), label: Text(t['stream']!)),
+                NavigationRailDestination(icon: const Icon(Icons.search_rounded), label: Text(t['search']!)),
+                NavigationRailDestination(icon: const Icon(Icons.hub_outlined), label: Text(t['graph']!)),
+                NavigationRailDestination(icon: const Icon(Icons.history_rounded), label: Text(t['replay']!)),
+              ],
+            ),
           Expanded(
-            child: Stack(
-        children: [
-          IndexedStack(
-            index: _currentIndex,
-            children: [
-              MemoryTimeline(onCaptureTap: () => _showCaptureDialog(context, ref, t)),
-              const CognitiveSearchScreen(),
-              const RelationshipGraphScreen(),
-              const ReplayScreen(),
-            ],
-          ),
-          if (_isProcessing) Container(color: Colors.black26, child: Center(child: Card(child: Padding(padding: const EdgeInsets.all(24.0), child: Column(mainAxisSize: MainAxisSize.min, children: [const CircularProgressIndicator(), const SizedBox(height: 16), Text(t['processing']!)])))))
-        ],
+            child: Column(
+              children: [
+                if (!graphLandscapeImmersive) const OfflineBanner(),
+                Expanded(
+                  child: Stack(
+                    children: [
+                      Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          for (final tabIndex in _mountedTabIndices.toList()..sort())
+                            Offstage(
+                              offstage: _currentIndex != tabIndex,
+                              child: TickerMode(
+                                enabled: _currentIndex == tabIndex,
+                                child: _buildTabChild(tabIndex, t),
+                              ),
+                            ),
+                        ],
+                      ),
+                      if (_isProcessing) Container(color: Colors.black26, child: Center(child: Card(child: Padding(padding: const EdgeInsets.all(24.0), child: Column(mainAxisSize: MainAxisSize.min, children: [const CircularProgressIndicator(), const SizedBox(height: 16), Text(t['processing']!)])))))
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
-      bottomNavigationBar: graphLandscapeImmersive
+      bottomNavigationBar: graphLandscapeImmersive || isWeb
           ? null
           : NavigationBar(
         height: 78,
         selectedIndex: _currentIndex,
-        onDestinationSelected: (i) {
-          setState(() => _currentIndex = i);
-          ref.read(mainNavigationTabProvider.notifier).state = i;
-        },
+        onDestinationSelected: (i) => _selectTab(i),
         destinations: [
           NavigationDestination(icon: const Icon(Icons.auto_awesome_motion_rounded), label: t['stream']!),
           NavigationDestination(icon: const Icon(Icons.search_rounded), label: t['search']!),
@@ -458,16 +500,54 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
                 if (_currentIndex == 0) const SizedBox(height: 12),
                 FloatingActionButton(
                   onPressed: () => _currentIndex == 1
-                      ? _showSearchVoiceDialog(context, ref, t)
-                      : _showCaptureDialog(context, ref, t),
+                      ? (kIsWeb ? _showSearchTextDialog(context, ref, t) : _showSearchVoiceDialog(context, ref, t))
+                      : (kIsWeb ? _showCaptureTextDialog(context, ref, t) : _showCaptureDialog(context, ref, t)),
                   heroTag: 'mic_btn',
                   backgroundColor: _isListening ? Colors.redAccent : (_currentIndex == 1 ? Colors.blueAccent : null),
-                  child: Icon(_isListening ? Icons.stop_rounded : (_currentIndex == 1 ? Icons.search_rounded : Icons.mic_rounded)),
+                  child: Icon(kIsWeb ? (_currentIndex == 1 ? Icons.search_rounded : Icons.edit_note_rounded) : (_isListening ? Icons.stop_rounded : (_currentIndex == 1 ? Icons.search_rounded : Icons.mic_rounded))),
                 ),
               ],
             ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
+  }
+
+  void _showSearchTextDialog(BuildContext context, WidgetRef ref, Map<String, String> t) async {
+    final controller = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t['search']!),
+        content: TextField(controller: controller, autofocus: true, decoration: InputDecoration(hintText: t['search_hint'])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t['cancel']!)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: Text(t['search_action']!)),
+        ],
+      ),
+    );
+    if (!mounted || text == null || text.isEmpty) return;
+    ref.read(searchQueryProvider.notifier).state = text;
+  }
+
+  void _showCaptureTextDialog(BuildContext context, WidgetRef ref, Map<String, String> t) async {
+    final categoryId = await showMemoryCategorySheet(context, ref);
+    if (!mounted || categoryId == null) return;
+    final inputCategory = memoryInputCategoryById(categoryId);
+
+    final controller = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t['capture_title']!),
+        content: TextField(controller: controller, autofocus: true, maxLines: 5, decoration: InputDecoration(hintText: t['capture_hint'])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(t['cancel']!)),
+          FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: Text(t['save']!)),
+        ],
+      ),
+    );
+    if (!mounted || text == null || text.isEmpty) return;
+    await _processAndSaveMemory(text, ref, type: 'voice', inputCategory: inputCategory);
   }
 
   void _showSearchVoiceDialog(BuildContext context, WidgetRef ref, Map<String, String> t) async {
@@ -590,7 +670,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
 
     final locale = ref.read(languageProvider).languageCode;
     final gpsPlaceResolved = position != null
-        ? await PlaceLookupService.resolvePlaceName(
+        ? await PlaceLookupService.resolveCapturePlaceLabel(
             position.latitude,
             position.longitude,
             localeCode: locale,
@@ -656,7 +736,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
   }) async {
     final locale = ref.read(languageProvider).languageCode;
     final gpsPlaceResolved = position != null
-        ? await PlaceLookupService.resolvePlaceName(
+        ? await PlaceLookupService.resolveCapturePlaceLabel(
             position.latitude,
             position.longitude,
             localeCode: locale,
@@ -754,10 +834,16 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
             final mlKitBytes = await prepareOcrImageBytes(image, maxSide: mlKitMaxSide, jpegQuality: 70);
             final ocrPath = mlKitBytes != null ? await writeTempJpeg(mlKitBytes) : null;
             if (ocrPath != null) {
-              ocrText = await recognizeTextWithMlKit(ocrPath);
+              await writeOnDeviceOcrInFlight(prefs, true);
+              try {
+                ocrText = await recognizeTextWithMlKit(ocrPath);
+              } finally {
+                await writeOnDeviceOcrInFlight(prefs, false);
+              }
             }
           } catch (e, stack) {
             debugPrint('Privacy photo OCR failed: $e\n$stack');
+            await writeOnDeviceOcrInFlight(prefs, false);
           }
         }
         await _saveLocalPhotoMemory(
@@ -793,7 +879,9 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
         final ocrPath = mlKitBytes != null ? await writeTempJpeg(mlKitBytes) : null;
         if (ocrPath != null) {
           try {
+            await writeOnDeviceOcrInFlight(prefs, true);
             final mlKitText = await recognizeTextWithMlKit(ocrPath);
+            await writeOnDeviceOcrInFlight(prefs, false);
             if (mlKitText.isNotEmpty && !isJunkOcrMetaResponse(mlKitText)) {
               debugPrint('ML Kit OCR success: ${mlKitText.length} chars');
               if (!mounted) return;
@@ -808,6 +896,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
               return;
             }
           } catch (e, stack) {
+            await writeOnDeviceOcrInFlight(prefs, false);
             debugPrint('ML Kit OCR failed, falling back to Vision: $e\n$stack');
           }
         }
@@ -928,7 +1017,7 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       await _cachePlaceName(position);
       final locale = ref.read(languageProvider).languageCode;
       final gpsPlaceResolved = position != null
-          ? await PlaceLookupService.resolvePlaceName(
+          ? await PlaceLookupService.resolveCapturePlaceLabel(
               position.latitude,
               position.longitude,
               localeCode: locale,
@@ -937,80 +1026,39 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       final gpsPlace = _gpsPlaceOrCoords(position, gpsPlaceResolved);
       final persistGps = shouldPersistCaptureGpsOnSave(type: type, content: text, localeCode: locale);
       final capturedAt = DateTime.now();
-      final voiceFields = buildVoiceMemoryFields(
-        speechText: text,
+
+      final pipeline = await MemoryCapturePipeline.instance
+          .withDictionary(ref.read(careEntityDictionaryProvider))
+          .process(
+        rawSttText: text,
+        localeCode: locale,
+        useCloudAi: useCloud,
+      );
+      final voiceFields = buildVoiceFieldsFromPipeline(
+        pipeline: pipeline,
         capturedAt: capturedAt,
         localeCode: locale,
         gpsPlace: persistGps ? gpsPlace : null,
       );
 
-      if (!useCloud) {
-        final applied = applyMemoryInputCategory(
-          localeCode: locale,
-          inputCategory: inputCategory,
-          fallbackCategory: voiceFields.category,
-          fallbackSubCategory: voiceFields.subCategory,
-        );
-        var draft = Memory(
-          id: "",
-          content: text,
-          summary: voiceFields.summary,
-          entities: voiceFields.entities,
-          createdAt: capturedAt,
-          category: applied.category,
-          subCategory: applied.subCategory,
-          type: type,
-          lat: persistGps ? position?.latitude : null,
-          lng: persistGps ? position?.longitude : null,
-        );
-        draft = await resolveRecallAnchorForMemory(
-          context,
-          draft,
-          localeCode: locale,
-          capturePlaceLabel: gpsPlace,
-          captureLat: position?.latitude,
-          captureLng: position?.longitude,
-        );
-        if (!mounted) return;
-        final saved = await ref.read(memoryListProvider.notifier).addMemory(draft);
-        if (saved != null && type == 'image' && imageBytesForThumbnail != null) {
-          await persistMemoryThumbnail(ref: ref, memoryId: saved.id, jpegBytes: imageBytesForThumbnail);
-        }
-        if (saved != null) {
-          HapticFeedback.lightImpact();
-        } else if (mounted && saved == null) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ref.read(translationsProvider)['save_failed']!)));
-        }
-        return;
-      }
-
-      final localeObj = ref.read(languageProvider);
-      final langName = languageNameForLocale(localeObj);
-      final subCategoryExamples = localeObj.languageCode == 'ko'
-          ? "'절친', '영어 회화', '고급 레스토랑'"
-          : "'Best Friend', 'English Conversation', 'Expensive Restaurant'";
-
-      final jsonText = await AiService.instance.chatJson(
-        systemPrompt:
-            "Classify this memory with extreme detail. Respond in $langName. Return JSON: {summary: string, entities: string[], category: 'Food'|'Social'|'Study'|'Work'|'Health'|'Travel'|'Finance'|'Other', sub_category: string}. summary must be ONE sentence capturing the core meaning and emotional significance of the memory (그날의 핵심 의미) — never metadata lists, dates, times, or comma-separated tags. Write summary, entities, and sub_category in $langName. Keep category as one of the English keys listed above. sub_category should be very specific (e.g. $subCategoryExamples). entities must be up to 6 short nouns (max 12 characters each) — people, places, activities, goals, emotions, brands, or concrete things only. Never include sentences or meta descriptions.",
-        userPrompt: text,
-      );
-      final data = jsonDecode(jsonText) as Map<String, dynamic>;
-      final mergedFields = mergeVoiceFieldsWithAi(localFields: voiceFields, aiData: data);
       final applied = applyMemoryInputCategory(
         localeCode: locale,
         inputCategory: inputCategory,
-        fallbackCategory: mergedFields.category,
-        fallbackSubCategory: mergedFields.subCategory,
+        fallbackCategory: voiceFields.category,
+        fallbackSubCategory: voiceFields.subCategory,
       );
-      final embedding = await AiService.instance.createEmbedding(text);
+
+      List<double>? embedding;
+      if (useCloud) {
+        embedding = await AiService.instance.createEmbedding(pipeline.normalizedText);
+      }
 
       if (!mounted) return;
       var draft = Memory(
         id: "",
-        content: text,
-        summary: mergedFields.summary,
-        entities: mergedFields.entities,
+        content: pipeline.originalText,
+        summary: voiceFields.summary,
+        entities: voiceFields.entities,
         createdAt: capturedAt,
         category: applied.category,
         subCategory: applied.subCategory,
@@ -1036,7 +1084,10 @@ class _MainNavigationScreenState extends ConsumerState<MainNavigationScreen> {
       if (saved != null) {
         HapticFeedback.lightImpact();
         if (mounted) {
-          await showMemoryThreadSuggestions(context, ref, saved);
+          await handleSemanticQuantityAfterSave(context, ref, saved, localeCode: locale);
+          if (useCloud) {
+            await showMemoryThreadSuggestions(context, ref, saved);
+          }
         }
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(ref.read(translationsProvider)['save_failed']!)));

@@ -1,5 +1,10 @@
 # secrets.local.json 키 포함 릴리스 APK (PDF 가이드 생성 생략)
 # 사용: .\scripts\build_release_secrets.ps1
+# QA용 Pro 우회: .\scripts\build_release_secrets.ps1 -ProBypass
+
+param(
+    [switch]$ProBypass
+)
 
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -29,6 +34,10 @@ if ($secrets.REVENUECAT_ANDROID_KEY) {
 }
 if ($secrets.REVENUECAT_IOS_KEY) {
     $defines += "--dart-define=REVENUECAT_IOS_KEY=$($secrets.REVENUECAT_IOS_KEY)"
+}
+if ($ProBypass) {
+    $defines += "--dart-define=DEV_PRO_BYPASS=true"
+    Write-Host "DEV_PRO_BYPASS=true (QA 테스트 APK — 스토어 배포 금지)" -ForegroundColor Yellow
 }
 
 Write-Host "==> Release APK (Supabase + RevenueCat keys from secrets.local.json)" -ForegroundColor Cyan

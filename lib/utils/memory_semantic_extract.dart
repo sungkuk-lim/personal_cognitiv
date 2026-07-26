@@ -22,6 +22,7 @@ class MemorySemanticScan {
 const kSemanticEventLexicon = {
   '시험', '생일', '결혼식', '졸업식', '입학식', '회식', '모임', '공연', '축제', '기념일',
   '여행', '나들이', '워크숍', '교육', '회의', '파티', '행사', '돌잔치', '장례', '개업',
+  '외진', '내원', '검진',
 };
 
 const kSemanticInterestLexicon = {
@@ -60,10 +61,39 @@ bool isKnownFoodLabel(String label) => kSemanticFoodLexicon.contains(label.trim(
 
 bool isKnownContentLabel(String label) => kSemanticContentLexicon.contains(label.trim());
 
-/// 콘텐츠·음식·장소 토큰 — 인물 후보에서 제외.
+bool isKnownInterestLabel(String label) => kSemanticInterestLexicon.contains(label.trim());
+
+bool isKnownEmotionLabel(String label) => kSemanticEmotionLexicon.contains(label.trim());
+
+const Set<String> kMealTimeGraphTokens = {
+  '식사', '저녁', '점심', '아침', '간식', '브런치', '런치',
+};
+
+const Set<String> kPhoneCallGraphTokens = {
+  '전화', '통화', '문자', '연락', '영상통화', '전화왔다', '전화왔',
+};
+
+bool isPhoneCallGraphToken(String label) {
+  final v = label.trim();
+  if (kPhoneCallGraphTokens.contains(v)) return true;
+  return v.endsWith('전화') && v.length <= 4;
+}
+
+bool isMealTimeGraphToken(String label) {
+  final v = label.trim();
+  if (kMealTimeGraphTokens.contains(v)) return true;
+  return RegExp(r'^(?:아침|점심|저녁|야식)식사$').hasMatch(v);
+}
+
+/// 콘텐츠·음식·관심사·감정·식사 시간대·통화 — 인물 후보에서 제외.
 bool isNonPersonGraphToken(String label) {
   final v = label.trim();
-  return isKnownFoodLabel(v) || isKnownContentLabel(v);
+  return isKnownFoodLabel(v) ||
+      isKnownContentLabel(v) ||
+      isKnownInterestLabel(v) ||
+      isKnownEmotionLabel(v) ||
+      isMealTimeGraphToken(v) ||
+      isPhoneCallGraphToken(v);
 }
 
 MemorySemanticScan extractSemanticFromText(String text) {

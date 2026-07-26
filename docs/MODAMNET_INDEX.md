@@ -12,6 +12,7 @@
 | [PLAY_CONSOLE_SETUP.md](PLAY_CONSOLE_SETUP.md) | Play 구독·정산 단계별 |
 | [SAAS_SETUP.md](SAAS_SETUP.md) | RevenueCat·Supabase·쿼터 기술 설정 |
 | [STORE_READINESS.md](STORE_READINESS.md) | 스토어 문구·스크린샷·카테고리 |
+| [PLAY_STORE_AND_SAAS_MASTER_GUIDE.md](PLAY_STORE_AND_SAAS_MASTER_GUIDE.md) | **95%→출시→SaaS 종합 실행 가이드** |
 | [SOFT_LAUNCH_7DAY.md](SOFT_LAUNCH_7DAY.md) | 출시 7일 일정 |
 | [COMMERCIALIZATION_90_SPRINT.md](COMMERCIALIZATION_90_SPRINT.md) | 90% 스프린트 체크리스트 |
 

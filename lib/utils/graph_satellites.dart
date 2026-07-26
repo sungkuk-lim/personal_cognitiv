@@ -3,14 +3,18 @@ import '../models/memory.dart';
 import 'graph_fragment_freshness.dart';
 import 'korean_person_names.dart';
 import 'memory_entity_extract.dart';
+import 'memory_entity_edit.dart';
+import 'memory_keyword_ui.dart';
 import 'memory_participation_extract.dart';
 import 'memory_semantic_extract.dart';
 import 'memory_theme_tags.dart';
+import 'ocr_utils.dart';
 
 /// 관계망 위성 노드 — 사람·장소·조직·활동·이벤트·콘텐츠·관심사·음식·취미·감정.
 class GraphMemorySatellites {
   const GraphMemorySatellites({
     this.people = const [],
+    this.pets = const [],
     this.places = const [],
     this.organizations = const [],
     this.activities = const [],
@@ -24,6 +28,7 @@ class GraphMemorySatellites {
   });
 
   final List<String> people;
+  final List<String> pets;
   final List<String> places;
   final List<String> organizations;
   final List<String> activities;
@@ -37,6 +42,7 @@ class GraphMemorySatellites {
 
   bool get isEmpty =>
       people.isEmpty &&
+      pets.isEmpty &&
       places.isEmpty &&
       organizations.isEmpty &&
       activities.isEmpty &&
@@ -54,7 +60,12 @@ GraphMemorySatellites extractGraphSatellites(
   required String localeCode,
   GraphMemoryFragment? aiFragment,
 }) {
-  final bundle = extractMemoryEntities(memory, localeCode: localeCode, aiFragment: aiFragment);
+  if (memoryHasManualEntityEdit(memory)) {
+    return _satellitesFromManualLabels(memory, localeCode: localeCode);
+  }
+
+  final fragment = freshGraphFragmentForMemory(memory, aiFragment);
+  final bundle = extractMemoryEntities(memory, localeCode: localeCode, aiFragment: fragment);
   final activities = [...bundle.activities];
   if (bundle.events.contains('여행') && !activities.contains('여행')) {
     activities.add('여행');
@@ -65,18 +76,92 @@ GraphMemorySatellites extractGraphSatellites(
   ]);
   final goals = bundle.activities.isEmpty ? _goalsFromMemory(memory) : <String>[];
 
+  return _mergeManualSatelliteLabels(
+    GraphMemorySatellites(
+      people: bundle.people,
+      pets: bundle.pets,
+      places: bundle.places,
+      organizations: bundle.organizations,
+      activities: activities,
+      events: bundle.events,
+      contents: bundle.contents,
+      interests: bundle.interests,
+      food: bundle.food,
+      hobbies: bundle.hobbies,
+      goals: goals.take(1).toList(),
+      emotions: emotions.take(2).toList(),
+    ),
+    memory,
+    localeCode: localeCode,
+  );
+}
+
+GraphMemorySatellites _satellitesFromManualLabels(
+  Memory memory, {
+  required String localeCode,
+}) {
+  return _mergeManualSatelliteLabels(
+    const GraphMemorySatellites(),
+    memory,
+    localeCode: localeCode,
+  );
+}
+
+GraphMemorySatellites _mergeManualSatelliteLabels(
+  GraphMemorySatellites base,
+  Memory memory, {
+  required String localeCode,
+}) {
+  if (!memoryHasManualEntityEdit(memory)) return base;
+  var people = [...base.people];
+  var pets = [...base.pets];
+  var places = [...base.places];
+  var organizations = [...base.organizations];
+  var activities = [...base.activities];
+  var events = [...base.events];
+  var interests = [...base.interests];
+  var food = [...base.food];
+  var hobbies = [...base.hobbies];
+
+  void addUnique(List<String> bucket, String label) {
+    if (!bucket.contains(label)) bucket.add(label);
+  }
+
+  for (final label in editableEntityLabelsForMemory(memory)) {
+    switch (classifyKeyword(label, memory, localeCode: localeCode)) {
+      case MemoryKeywordKind.person:
+        addUnique(people, label);
+      case MemoryKeywordKind.pet:
+        addUnique(pets, label);
+      case MemoryKeywordKind.place:
+        addUnique(places, label);
+      case MemoryKeywordKind.organization:
+        addUnique(organizations, label);
+      case MemoryKeywordKind.event:
+        addUnique(events, label);
+      case MemoryKeywordKind.interest:
+        addUnique(interests, label);
+      case MemoryKeywordKind.food:
+        addUnique(food, label);
+      case MemoryKeywordKind.activity:
+      case MemoryKeywordKind.tag:
+        addUnique(activities, label);
+    }
+  }
+
   return GraphMemorySatellites(
-    people: bundle.people,
-    places: bundle.places,
-    organizations: bundle.organizations,
+    people: people,
+    pets: pets,
+    places: places,
+    organizations: organizations,
     activities: activities,
-    events: bundle.events,
-    contents: bundle.contents,
-    interests: bundle.interests,
-    food: bundle.food,
-    hobbies: bundle.hobbies,
-    goals: goals.take(1).toList(),
-    emotions: emotions.take(2).toList(),
+    events: events,
+    contents: base.contents,
+    interests: interests,
+    food: food,
+    hobbies: hobbies,
+    goals: base.goals,
+    emotions: base.emotions,
   );
 }
 
@@ -105,37 +190,69 @@ GraphMemorySatellites visibleGraphSatellitesForMemory(
     raw.activities,
   ).where((p) => shouldShowGraphSatelliteLabel(p, hubTitle: resolvedHub)).toList();
 
+  final pets = raw.pets
+      .where((p) => !isSelfPersonLabel(p, localeCode))
+      .where((p) => shouldShowGraphSatelliteLabel(p, hubTitle: resolvedHub))
+      .toList();
+
   final places = raw.places
       .map((p) => p.trim())
       .where((p) => p.isNotEmpty)
+      .where((p) => !isInternalMemoryEntityTag(p))
+      // 성수동처럼 본문에서 장소로 추출된 행정동은 인명 휴리스틱보다 장소 유지.
+      .where((p) => !isPersonLabelNotPlace(p) || _keepAdminDongPlace(p, raw.places))
       .where((p) => !isGraphMorphologyJunkToken(p) && !isMisleadingPlaceChonToken(p))
       .where((p) => shouldShowGraphSatelliteLabel(p, hubTitle: resolvedHub))
       .toList();
 
-  List<String> filterMisc(List<String> labels) => labels
+  // places에 섞인 인명은 사람 위성으로 승격.
+  final rescuedPeople = raw.places
+      .map((p) => p.trim())
+      .where((p) => p.isNotEmpty && isPersonLabelNotPlace(p) && !isBlockedPersonName(p))
+      .where((p) => !_keepAdminDongPlace(p, raw.places))
+      .map(normalizeKoreanPersonName)
+      .where((p) => p.isNotEmpty)
+      .toList();
+
+  List<String> filterMisc(List<String> labels, {bool dropPersonLike = true}) => labels
+      .where((l) => !isInternalMemoryEntityTag(l))
+      .where((l) => !dropPersonLike || !isPersonLabelNotPlace(l))
       .where((l) => !isGraphFoodOrNoiseToken(l))
       .where((l) => shouldShowGraphSatelliteLabel(l, hubTitle: resolvedHub))
       .toList();
 
+  final mergedPeople = <String>[
+    ...people.where((p) => !isInternalMemoryEntityTag(p)),
+    ...rescuedPeople.where((p) => !people.contains(p)),
+  ];
+
   return consolidateVisibleGraphSatellites(
     GraphMemorySatellites(
-      people: people,
+      people: mergedPeople,
+      pets: pets.where((p) => !isInternalMemoryEntityTag(p)).toList(),
       places: places,
       organizations: filterMisc(raw.organizations),
-      activities: filterMisc(raw.activities),
-      events: filterMisc(raw.events),
-      contents: filterMisc(raw.contents),
+      // 고스톰 등 활동은 인명 휴리스틱에 걸리지 않게 유지.
+      activities: filterMisc(raw.activities, dropPersonLike: false),
+      events: filterMisc(raw.events, dropPersonLike: false),
+      contents: filterMisc(raw.contents, dropPersonLike: false),
       interests: filterMisc(raw.interests),
       food: raw.food
           .where((l) => !isGraphFoodOrNoiseToken(l))
           .where((l) => shouldShowGraphSatelliteLabel(l, hubTitle: resolvedHub))
           .toList(),
-      hobbies: filterMisc(raw.hobbies),
+      hobbies: filterMisc(raw.hobbies, dropPersonLike: false),
       goals: filterMisc(raw.goals),
       emotions: filterMisc(raw.emotions),
     ),
     hubTitle: resolvedHub,
   );
+}
+
+bool _keepAdminDongPlace(String label, List<String> extractedPlaces) {
+  final v = label.trim();
+  if (!v.endsWith('동') || v.length < 3) return false;
+  return extractedPlaces.contains(v);
 }
 
 /// 관계망 위성 — 이벤트·활동·관심사 중복 제거, 대표 이벤트 1개 우선.
@@ -167,6 +284,7 @@ GraphMemorySatellites consolidateVisibleGraphSatellites(
 
   return GraphMemorySatellites(
     people: raw.people,
+    pets: raw.pets,
     places: raw.places,
     organizations: raw.organizations,
     activities: activities,
@@ -238,17 +356,18 @@ void claimSatelliteLabel(Map<String, String> claimed, String label, String kind)
 int graphSatelliteLabelPriority(String kind) {
   return switch (kind) {
     'person' => 0,
-    'place' => 1,
-    'organization' => 2,
-    'event' => 3,
-    'activity' => 4,
-    'content' => 5,
-    'interest' => 6,
-    'food' => 7,
-    'hobby' => 8,
-    'goal' => 9,
-    'emotion' => 10,
-    _ => 11,
+    'pet' => 1,
+    'place' => 2,
+    'organization' => 3,
+    'event' => 4,
+    'activity' => 5,
+    'content' => 6,
+    'interest' => 7,
+    'food' => 8,
+    'hobby' => 9,
+    'goal' => 10,
+    'emotion' => 11,
+    _ => 12,
   };
 }
 

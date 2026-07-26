@@ -1,5 +1,6 @@
 import '../models/memory.dart';
 import 'korean_person_names.dart';
+import 'memory_entity_edit.dart';
 import 'memory_entity_extract.dart';
 import 'memory_semantic_extract.dart';
 import 'ocr_utils.dart';
@@ -53,6 +54,13 @@ List<String> foodTagsForMemory(Memory memory) {
 
 List<String> hobbyTagsForMemory(Memory memory) {
   return _readTags(memory, kTagHobbyPrefix, () => _scanLexicon(memory, kHobbyLexicon));
+}
+
+List<String> interestTagsForMemory(Memory memory, {String localeCode = 'ko'}) {
+  return _readTags(memory, kTagInterestPrefix, () {
+    final bundle = extractMemoryEntities(memory, localeCode: localeCode);
+    return _dedupe([...bundle.interests, ..._scanLexicon(memory, kSemanticInterestLexicon)]);
+  });
 }
 
 List<String> seasonTagsForMemory(Memory memory) {
@@ -127,6 +135,6 @@ Memory enrichMemoryWithThemeTags(Memory memory, {String localeCode = 'ko'}) {
 }
 
 /// 타임라인·검색 칩용 — 내부 tag:/rel:/event: 접두사·합성 라벨 제외.
-List<String> displayEntitiesForMemory(Memory memory) {
-  return userVisibleEntityLabels(memory);
+List<String> displayEntitiesForMemory(Memory memory, {String localeCode = 'ko'}) {
+  return displayTagsForMemory(memory, localeCode: localeCode);
 }

@@ -20,7 +20,6 @@ import '../../services/subscription_exceptions.dart';
 import '../../utils/ocr_utils.dart';
 import '../../features/replay/entity_highlight_viewer.dart';
 import '../../utils/entity_highlight_media.dart';
-import '../../utils/memory_image_paths.dart';
 import '../../utils/memory_video_paths.dart';
 import 'graph_chat_save.dart';
 import 'graph_layout.dart';
@@ -107,12 +106,14 @@ class _GraphNodeAiSheetState extends ConsumerState<_GraphNodeAiSheet> with Singl
     final localeCode = ref.read(languageProvider).languageCode;
     final fragments = ref.read(memoryGraphFragmentsProvider);
     final memories = _connectedMemories();
-    _lines.add(_AiChatLine.assistant(graphNodeLocalInsightLine(
-      node: widget.node,
-      memories: memories,
-      fragments: fragments,
-      localeCode: localeCode,
-    )));
+    if (memories.isEmpty) {
+      _lines.add(_AiChatLine.assistant(graphNodeLocalInsightLine(
+        node: widget.node,
+        memories: memories,
+        fragments: fragments,
+        localeCode: localeCode,
+      )));
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       if (ref.read(graphAiEnabledProvider) && _canUseAi()) {
@@ -183,13 +184,48 @@ class _GraphNodeAiSheetState extends ConsumerState<_GraphNodeAiSheet> with Singl
   }
 
   bool _isEntityMediaNode() {
+    final id = widget.node.id;
+    if (id.startsWith('memory_') ||
+        id.startsWith('group_') ||
+        id.startsWith('event_hub_') ||
+        id.startsWith('focus_hub_')) {
+      return true;
+    }
     return widget.node.kind == GraphNodeKind.person ||
+        widget.node.kind == GraphNodeKind.pet ||
         widget.node.kind == GraphNodeKind.place ||
-        widget.node.kind == GraphNodeKind.activity;
+        widget.node.kind == GraphNodeKind.activity ||
+        widget.node.kind == GraphNodeKind.event ||
+        widget.node.kind == GraphNodeKind.organization ||
+        widget.node.kind == GraphNodeKind.group ||
+        widget.node.kind == GraphNodeKind.eventHub ||
+        widget.node.kind == GraphNodeKind.memory;
   }
 
   void _openEntityMedia() {
     Navigator.of(context).pop();
+    if (widget.node.id.startsWith('memory_')) {
+      final memoryId = widget.node.id.replaceFirst('memory_', '');
+      final memories = ref.read(memoryListProvider);
+      Memory? memory;
+      for (final m in memories) {
+        if (m.id == memoryId) {
+          memory = m;
+          break;
+        }
+      }
+      if (memory == null || !context.mounted) return;
+      showMemoryDetailSheet(
+        context,
+        memory,
+        imagePaths: widget.imagePaths,
+        options: MemoryDetailPresets.graphFromNodeAi(
+          node: widget.node,
+          hasVideo: memoryHasVideo(memory.id, widget.videoPaths),
+        ),
+      );
+      return;
+    }
     showGraphEntityMediaSheet(
       context,
       ref,
@@ -392,6 +428,7 @@ class _GraphNodeAiSheetState extends ConsumerState<_GraphNodeAiSheet> with Singl
 
   IconData _iconForKind(GraphNodeKind kind) => switch (kind) {
         GraphNodeKind.person => Icons.person_rounded,
+        GraphNodeKind.pet => Icons.pets_rounded,
         GraphNodeKind.place => Icons.place_rounded,
         GraphNodeKind.memory => Icons.auto_stories_rounded,
         GraphNodeKind.group => Icons.hub_rounded,
@@ -406,6 +443,147 @@ class _GraphNodeAiSheetState extends ConsumerState<_GraphNodeAiSheet> with Singl
         GraphNodeKind.goal => Icons.flag_rounded,
         GraphNodeKind.emotion => Icons.favorite_rounded,
       };
+
+  static const double _inputBarReserve = 76;
+
+  Widget _buildCollapsedChip(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme colorScheme,
+    List<Memory> memories,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: InputChip(
+          visualDensity: VisualDensity.compact,
+          avatar: Icon(Icons.unfold_more_rounded, size: 16, color: colorScheme.primary),
+          label: Text(
+            memories.isEmpty ? widget.node.title : '${widget.node.title} · ${memories.length}',
+            style: theme.textTheme.labelLarge,
+          ),
+          onPressed: () => setState(() => _showTopExtras = true),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTopExtras(
+    BuildContext context,
+    ThemeData theme,
+    ColorScheme colorScheme,
+    List<Memory> memories,
+    Map<String, String> t,
+    List<String> suggestions,
+  ) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_hasHighlightMedia())
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+            child: SizedBox(
+              width: double.infinity,
+              child: FilledButton.tonalIcon(
+                onPressed: _playEntityHighlight,
+                icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
+                label: Text(t['entity_highlight_play']!.replaceAll('{name}', widget.node.title)),
+              ),
+            ),
+          ),
+        if (_isEntityMediaNode())
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+            child: SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _openEntityMedia,
+                icon: const Icon(Icons.photo_library_outlined, size: 18),
+                label: Text(t['graph_entity_media_open']!),
+              ),
+            ),
+          ),
+        if (memories.isNotEmpty)
+          GraphNodeInsightPanel(
+            node: widget.node,
+            insight: buildGraphNodeInsight(
+              node: widget.node,
+              connectedMemories: memories,
+              allMemories: ref.read(memoryListProvider),
+              fragments: ref.read(memoryGraphFragmentsProvider),
+              localeCode: ref.watch(languageProvider).languageCode,
+            ),
+            imagePaths: widget.imagePaths,
+            localeCode: ref.watch(languageProvider).languageCode,
+            translations: t,
+            onMemoryTap: (memory) {
+              showMemoryDetailSheet(
+                context,
+                memory,
+                imagePaths: widget.imagePaths,
+                options: MemoryDetailPresets.full,
+              );
+            },
+            onProTap: () => requireProOrShowPaywall(
+              context,
+              ref,
+              reasonKey: 'pro_reason_insights',
+            ),
+          ),
+        if (memories.isEmpty)
+          SizedBox(
+            height: 40,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              itemCount: _advancedAiEnabled ? suggestions.length : 0,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final q = suggestions[i];
+                return ActionChip(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  avatar: Icon(Icons.bolt_rounded, size: 15, color: colorScheme.tertiary),
+                  label: Text(q, style: theme.textTheme.labelMedium),
+                  onPressed: _loading ? null : () => _sendMessage(q, fromSuggestion: true),
+                );
+              },
+            ),
+          ),
+        if (!_advancedAiEnabled)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: FilledButton.tonalIcon(
+              onPressed: _enableAdvancedAi,
+              icon: const Icon(Icons.psychology_alt_rounded, size: 18),
+              label: Text(t['graph_node_ai_advanced']!),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildChatBubble(BuildContext context, ThemeData theme, ColorScheme colorScheme, _AiChatLine line) {
+    return Align(
+      alignment: line.isUser ? Alignment.centerRight : Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
+        decoration: BoxDecoration(
+          color: line.isUser ? colorScheme.primaryContainer : colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.only(
+            topLeft: const Radius.circular(16),
+            topRight: const Radius.circular(16),
+            bottomLeft: Radius.circular(line.isUser ? 16 : 4),
+            bottomRight: Radius.circular(line.isUser ? 4 : 16),
+          ),
+        ),
+        child: Text(line.text, style: theme.textTheme.bodyMedium?.copyWith(height: 1.4)),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -424,6 +602,7 @@ class _GraphNodeAiSheetState extends ConsumerState<_GraphNodeAiSheet> with Singl
       minChildSize: 0.5,
       builder: (_, sheetScroll) {
         final chatFocus = hasUserReply && !_showTopExtras;
+        final scrollBottomPad = _inputBarReserve + bottomInset + (_savedMemory != null ? 56 : 0);
         return Container(
           decoration: BoxDecoration(
             color: colorScheme.surface,
@@ -459,150 +638,44 @@ class _GraphNodeAiSheetState extends ConsumerState<_GraphNodeAiSheet> with Singl
                 savedLabel: t['graph_node_ai_saved_done']!,
                 onSave: _saveConversationToMemory,
               ),
-              AnimatedCrossFade(
-                duration: const Duration(milliseconds: 220),
-                crossFadeState: chatFocus ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-                sizeCurve: Curves.easeInOut,
-                firstChild: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_hasHighlightMedia())
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: FilledButton.tonalIcon(
-                            onPressed: _playEntityHighlight,
-                            icon: const Icon(Icons.play_circle_outline_rounded, size: 20),
-                            label: Text(t['entity_highlight_play']!.replaceAll('{name}', widget.node.title)),
-                          ),
-                        ),
-                      ),
-                    if (_isEntityMediaNode())
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: _openEntityMedia,
-                            icon: const Icon(Icons.photo_library_outlined, size: 18),
-                            label: Text(t['graph_entity_media_open']!),
-                          ),
-                        ),
-                      ),
-                    if (memories.isNotEmpty)
-                      GraphNodeInsightPanel(
-                        node: widget.node,
-                        insight: buildGraphNodeInsight(
-                          node: widget.node,
-                          connectedMemories: memories,
-                          allMemories: ref.read(memoryListProvider),
-                          fragments: ref.read(memoryGraphFragmentsProvider),
-                          localeCode: ref.watch(languageProvider).languageCode,
-                        ),
-                        imagePaths: widget.imagePaths,
-                        localeCode: ref.watch(languageProvider).languageCode,
-                        translations: t,
-                        onMemoryTap: (memory) {
-                          showMemoryDetailSheet(
-                            context,
-                            memory,
-                            imagePaths: widget.imagePaths,
-                            options: MemoryDetailPresets.full,
-                          );
-                        },
-                        onProTap: () => requireProOrShowPaywall(
-                          context,
-                          ref,
-                          reasonKey: 'pro_reason_insights',
-                        ),
-                      ),
-                    if (memories.isEmpty)
-                    SizedBox(
-                      height: 40,
-                      child: ListView.separated(
-                        scrollDirection: Axis.horizontal,
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                        itemCount: _advancedAiEnabled ? suggestions.length : 0,
-                        separatorBuilder: (_, __) => const SizedBox(width: 8),
-                        itemBuilder: (_, i) {
-                          final q = suggestions[i];
-                          return ActionChip(
-                            visualDensity: VisualDensity.compact,
-                            padding: const EdgeInsets.symmetric(horizontal: 4),
-                            avatar: Icon(Icons.bolt_rounded, size: 15, color: colorScheme.tertiary),
-                            label: Text(q, style: theme.textTheme.labelMedium),
-                            onPressed: _loading ? null : () => _sendMessage(q, fromSuggestion: true),
-                          );
-                        },
-                      ),
-                    ),
-                    if (!_advancedAiEnabled)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                        child: FilledButton.tonalIcon(
-                          onPressed: _enableAdvancedAi,
-                          icon: const Icon(Icons.psychology_alt_rounded, size: 18),
-                          label: Text(t['graph_node_ai_advanced']!),
-                        ),
-                      ),
-                  ],
-                ),
-                secondChild: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: InputChip(
-                      visualDensity: VisualDensity.compact,
-                      avatar: Icon(Icons.unfold_more_rounded, size: 16, color: colorScheme.primary),
-                      label: Text(
-                        memories.isEmpty
-                            ? widget.node.title
-                            : '${widget.node.title} · ${memories.length}',
-                        style: theme.textTheme.labelLarge,
-                      ),
-                      onPressed: () => setState(() => _showTopExtras = true),
-                    ),
-                  ),
-                ),
-              ),
               Expanded(
-                child: ListView.builder(
+                child: CustomScrollView(
                   controller: _scrollController,
-                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-                  itemCount: _lines.length + (_loading ? 1 : 0),
-                  itemBuilder: (_, i) {
-                    if (_loading && i == _lines.length) {
-                      return const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Align(
-                          alignment: Alignment.centerLeft,
-                          child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)),
-                        ),
-                      );
-                    }
-                    final line = _lines[i];
-                    return Align(
-                      alignment: line.isUser ? Alignment.centerRight : Alignment.centerLeft,
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * 0.82),
-                        decoration: BoxDecoration(
-                          color: line.isUser
-                              ? colorScheme.primaryContainer
-                              : colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.only(
-                            topLeft: const Radius.circular(16),
-                            topRight: const Radius.circular(16),
-                            bottomLeft: Radius.circular(line.isUser ? 16 : 4),
-                            bottomRight: Radius.circular(line.isUser ? 4 : 16),
-                          ),
-                        ),
-                        child: Text(line.text, style: theme.textTheme.bodyMedium?.copyWith(height: 1.4)),
+                  slivers: [
+                    SliverToBoxAdapter(
+                      child: AnimatedCrossFade(
+                        duration: const Duration(milliseconds: 220),
+                        crossFadeState: chatFocus ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+                        sizeCurve: Curves.easeInOut,
+                        firstChild: _buildTopExtras(context, theme, colorScheme, memories, t, suggestions),
+                        secondChild: _buildCollapsedChip(context, theme, colorScheme, memories),
                       ),
-                    );
-                  },
+                    ),
+                    SliverPadding(
+                      padding: EdgeInsets.fromLTRB(16, 4, 16, scrollBottomPad),
+                      sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, i) {
+                            if (i == _lines.length) {
+                              return const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                ),
+                              );
+                            }
+                            return _buildChatBubble(context, theme, colorScheme, _lines[i]);
+                          },
+                          childCount: _lines.length + (_loading ? 1 : 0),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
               if (_savedMemory != null)
@@ -640,32 +713,35 @@ class _GraphNodeAiSheetState extends ConsumerState<_GraphNodeAiSheet> with Singl
                     ),
                   ),
                 ),
-              Padding(
-                padding: EdgeInsets.fromLTRB(12, 4, 12, 12 + bottomInset),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _inputController,
-                        minLines: 1,
-                        maxLines: 3,
-                        textInputAction: TextInputAction.send,
-                        decoration: InputDecoration(
-                          hintText: _advancedAiEnabled
-                              ? t['graph_node_ai_input_hint']!
-                              : t['graph_node_ai_note_hint']!,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(12, 4, 12, 8 + bottomInset),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: TextField(
+                          controller: _inputController,
+                          minLines: 1,
+                          maxLines: 3,
+                          textInputAction: TextInputAction.send,
+                          decoration: InputDecoration(
+                            hintText: _advancedAiEnabled
+                                ? t['graph_node_ai_input_hint']!
+                                : t['graph_node_ai_note_hint']!,
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(24)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          ),
+                          onSubmitted: (_) => _submitInput(),
                         ),
-                        onSubmitted: (_) => _submitInput(),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      onPressed: _loading ? null : _submitInput,
-                      icon: const Icon(Icons.send_rounded),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      IconButton.filled(
+                        onPressed: _loading ? null : _submitInput,
+                        icon: const Icon(Icons.send_rounded),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ],

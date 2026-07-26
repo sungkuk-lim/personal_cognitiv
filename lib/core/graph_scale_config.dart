@@ -7,5 +7,9 @@ abstract final class GraphScaleConfig {
   static const int maxLayoutMemories = 200;
 
   /// 소규모 그래프 — 위성을 처음부터 펼칩니다.
-  static const int autoExpandSatelliteMemoryCount = 6;
+  /// (너무 크면 드래그·렌더 비용이 급증하므로 상용 기본값은 보수적으로 유지)
+  static const int autoExpandSatelliteMemoryCount = 2;
+
+  /// 이 노드 수 이상이면 새 클러스터를 기본 접어 밀도 완화.
+  static const int autoCollapseClusterNodeThreshold = 32;
 }

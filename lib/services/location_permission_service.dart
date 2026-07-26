@@ -3,8 +3,12 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart' as ph;
+
 enum AppLocationAccess {
-  granted,
+  /// 백그라운드 회상 포함 「항상 허용」.
+  always,
+  /// 앱 사용 중만.
+  whileInUse,
   denied,
   deniedForever,
   serviceDisabled,
@@ -32,10 +36,13 @@ class LocationPermissionService {
     return _fromPermission(permission);
   }
 
+  static bool hasForegroundAccess(AppLocationAccess access) =>
+      access == AppLocationAccess.always || access == AppLocationAccess.whileInUse;
+
   static Future<Position?> getCurrentPositionForMemoryCapture() async {
     try {
       final access = await currentAccess();
-      if (access != AppLocationAccess.granted) return null;
+      if (!hasForegroundAccess(access)) return null;
       return await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
@@ -55,7 +62,7 @@ class LocationPermissionService {
   static Future<Position?> getCurrentPositionIfAllowed() async {
     try {
       final access = await currentAccess();
-      if (access != AppLocationAccess.granted) return null;
+      if (!hasForegroundAccess(access)) return null;
       return await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.medium),
       );
@@ -108,7 +115,7 @@ class LocationPermissionService {
     if (!Platform.isAndroid) return true;
 
     final access = await requestAccess();
-    if (access != AppLocationAccess.granted) return false;
+    if (!hasForegroundAccess(access)) return false;
 
     final status = await ph.Permission.locationAlways.status;
     if (status.isGranted) return true;
@@ -129,8 +136,9 @@ class LocationPermissionService {
   static AppLocationAccess _fromPermission(LocationPermission permission) {
     switch (permission) {
       case LocationPermission.always:
+        return AppLocationAccess.always;
       case LocationPermission.whileInUse:
-        return AppLocationAccess.granted;
+        return AppLocationAccess.whileInUse;
       case LocationPermission.deniedForever:
         return AppLocationAccess.deniedForever;
       case LocationPermission.denied:

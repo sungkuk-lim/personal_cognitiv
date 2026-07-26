@@ -45,7 +45,7 @@ Return: {
 Priority (strict): person ★★★★★ > event ★★★★★ > place ★★★★ > organization ★★★★ > activity/content/interest ★★★ > emotion ★★ > food ★.
 Rules:
 - event_title: the MAIN occasion (회식, 시험, 여행). Not "탕수육" alone.
-- person: real human names AND family terms (아들, 엄마, 아버지, 남편, 딸, 동생 등).
+- person: real human names AND family terms (아들, 엄마, 아버지, 남편, 딸, 동생 등). NEVER topics (인공지능, AI, 스타트업, 투자, 프로그래밍).
 - event: 시험, 생일, 결혼식, 졸업식, 회식 등.
 - content: 영화, 드라마, 책, 유튜브 등.
 - interest: AI, 투자, 컴퓨터, 디자인 등 공통 관심사.

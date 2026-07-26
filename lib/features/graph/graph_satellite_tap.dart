@@ -72,18 +72,18 @@ bool satelliteSegmentsIncludePersonAndPlace(List<SatelliteRailSegment> segments)
   return hasPerson && hasPlace;
 }
 
-/// 레일 탭 시 실제 펼침 모드 — 사람·장소가 둘 다 있으면 함께 펼칩니다.
+/// 레일 탭 시 실제 펼침 모드 — 왼쪽 레일은 그 기억의 위성 **전체**를 펼칩니다.
+///
+/// 세그먼트(사람/장소)별 부분 펼침은 배지 숫자와 실제 노드가 어긋나기 쉬워
+/// 상용 UX에서는 한 번에 모두 펼치는 쪽이 예측 가능합니다.
 GraphSatelliteExpandMode expandModeFromRailTap({
   required List<SatelliteRailSegment> segments,
   required GraphSatelliteExpandMode tappedSegmentMode,
 }) {
-  if (segments.length <= 1) return tappedSegmentMode;
-  if (satelliteSegmentsIncludePersonAndPlace(segments) &&
-      (tappedSegmentMode == GraphSatelliteExpandMode.person ||
-          tappedSegmentMode == GraphSatelliteExpandMode.place)) {
-    return GraphSatelliteExpandMode.personAndPlace;
-  }
-  return tappedSegmentMode;
+  if (segments.isEmpty) return GraphSatelliteExpandMode.all;
+  // 단일 종류만 있으면 그 종류만(가볍게), 여러 종류면 전체.
+  if (segments.length == 1) return segments.first.mode;
+  return GraphSatelliteExpandMode.all;
 }
 
 /// 배지 문자열(사람 4 · 장소 1)을 레일 세그먼트로 파싱합니다.

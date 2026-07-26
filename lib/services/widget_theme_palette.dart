@@ -21,6 +21,8 @@ class WidgetThemePalette {
     required this.textSecondary,
     required this.textCard,
     required this.textCardMuted,
+    required this.textOnBg,
+    required this.cardBorder,
     required this.isDark,
   });
 
@@ -39,6 +41,8 @@ class WidgetThemePalette {
   final Color textSecondary;
   final Color textCard;
   final Color textCardMuted;
+  final Color textOnBg;
+  final Color cardBorder;
   final bool isDark;
 
   static WidgetThemePalette fromSeed(Color seedColor, Brightness brightness) {
@@ -61,9 +65,15 @@ class WidgetThemePalette {
     );
 
     final graphChipBg = Color.alphaBlend(
-      scheme.primary.withValues(alpha: isDark ? 0.28 : 0.12),
-      scheme.surfaceContainerHighest,
+      scheme.primary.withValues(alpha: isDark ? 0.32 : 0.14),
+      isDark ? const Color(0xF014161C) : const Color(0xF8FFFFFF),
     );
+
+    final cardFill = isDark ? const Color(0xF0161820) : const Color(0xF8FFFFFF);
+    final cardBorder = isDark
+        ? scheme.outlineVariant.withValues(alpha: 0.55)
+        : scheme.outlineVariant.withValues(alpha: 0.45);
+    final textOnBg = isDark ? const Color(0xFFF2F4FA) : const Color(0xFF12141A);
 
     return WidgetThemePalette(
       bgTop: bgTop,
@@ -73,14 +83,16 @@ class WidgetThemePalette {
       btnPrimaryOn: scheme.onPrimary,
       btnSecondaryOn: scheme.onSurface,
       graphChipBg: graphChipBg,
-      graphChipOn: scheme.onSurface,
-      countChipBg: scheme.surfaceContainerHighest.withValues(alpha: isDark ? 0.58 : 0.94),
-      countChipOn: scheme.onSurfaceVariant,
-      cardBg: isDark ? const Color(0x1FFFFFFF) : scheme.surface.withValues(alpha: 0.90),
+      graphChipOn: isDark ? const Color(0xFFF0F2F8) : scheme.onSurface,
+      countChipBg: isDark ? const Color(0xE81C1F28) : const Color(0xF5FFFFFF),
+      countChipOn: isDark ? const Color(0xFFE8EAF0) : scheme.onSurface,
+      cardBg: cardFill,
       textPrimary: scheme.onSurface,
-      textSecondary: scheme.onSurface.withValues(alpha: isDark ? 0.72 : 0.68),
-      textCard: scheme.onSurface.withValues(alpha: isDark ? 0.95 : 0.92),
-      textCardMuted: scheme.onSurface.withValues(alpha: isDark ? 0.50 : 0.55),
+      textSecondary: scheme.onSurface.withValues(alpha: isDark ? 0.78 : 0.72),
+      textCard: isDark ? const Color(0xFFF4F6FC) : const Color(0xFF101218),
+      textCardMuted: isDark ? const Color(0xFFB8BEC8) : const Color(0xFF5C6370),
+      textOnBg: textOnBg,
+      cardBorder: cardBorder,
       isDark: isDark,
     );
   }
@@ -105,6 +117,8 @@ class WidgetThemePalette {
     await put('widget_text_secondary', textSecondary);
     await put('widget_text_card', textCard);
     await put('widget_text_card_muted', textCardMuted);
+    await put('widget_text_on_bg', textOnBg);
+    await put('widget_card_border', cardBorder);
     await HomeWidget.saveWidgetData<int>('widget_is_dark', isDark ? 1 : 0);
   }
 }

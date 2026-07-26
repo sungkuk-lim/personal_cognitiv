@@ -2,17 +2,20 @@ import '../models/graph_ai_snapshot.dart';
 import '../models/memory.dart';
 import 'memory_detail_text.dart';
 import 'graph_fragment_freshness.dart';
+import 'graph_entity_quality.dart';
 import 'graph_meaning_extract.dart';
 import 'korean_person_names.dart';
 import 'memory_participation_extract.dart';
 import 'memory_semantic_extract.dart';
+import 'medical_entity_lexicon.dart';
+import 'memory_semantic_flow.dart';
 import 'ocr_utils.dart';
 import 'photo_memory_format.dart';
 
 /// 관계망 위성 — 인물·장소·조직 상한.
 const int kGraphMaxPeopleSatellites = 12;
-const int kGraphMaxPlaceSatellites = 3;
-const int kGraphMaxOrgSatellites = 3;
+const int kGraphMaxPlaceSatellites = 8;
+const int kGraphMaxOrgSatellites = 6;
 
 /// 음식·일반명사 — 그래프 노드에서 제외.
 const Set<String> kGraphFoodNoiseTokens = {
@@ -20,24 +23,26 @@ const Set<String> kGraphFoodNoiseTokens = {
   '여러가지', '이런저런', '이야기', '얘기', '대화', '메뉴',
 };
 
-const Set<String> kGraphMealCompanionTokens = {
-  '식사', '저녁', '점심', '아침', '간식', '브런치', '런치',
-};
+const Set<String> kGraphMealCompanionTokens = kMealTimeGraphTokens;
 
-bool isGraphMealCompanionToken(String token) => kGraphMealCompanionTokens.contains(token.trim());
+bool isGraphMealCompanionToken(String token) => isMealTimeGraphToken(token);
 
 /// 인물로 오인되는 직함·집합 명사·카테고리 키워드.
 const Set<String> kBlockedPersonTokens = {
-  '원직원들', '직원들', '병원직원들', '병원직원', '간호과장', '간호팀장', '간호사', '보호사',
+  '원직원들', '직원들', '병원직원들', '병원직원', '간호과장', '간호팀장', '간호사', '간호', '보호사',
   '참석자', '참석', '팀장', '과장', '원장', '부장', '이사', '대리', '사원',
   '여러가지', '이런저런', '모두', '전원', '직원',
   '시험', '컴퓨터', '공부', '능력', '활용', '자격', '증', '급',
+  '환자', '안과', '치과', '정형외과', '정형외', '소화기내과', '외진현황', '현황', '보고',
+  '연인', '관계', '우리', '함께', '활동', '구성', '분류', '주제', '친구', '사람',
+  '함께하는', '함께하',
 };
 
 class MemoryEntityBundle {
   const MemoryEntityBundle({
     required this.eventTitle,
     this.people = const [],
+    this.pets = const [],
     this.organizations = const [],
     this.places = const [],
     this.activities = const [],
@@ -51,6 +56,7 @@ class MemoryEntityBundle {
 
   final String eventTitle;
   final List<String> people;
+  final List<String> pets;
   final List<String> organizations;
   final List<String> places;
   final List<String> activities;
@@ -118,6 +124,7 @@ MemoryEntityBundle extractMemoryEntities(
   final effectiveFragment = freshGraphFragmentForMemory(memory, aiFragment);
 
   final localPeople = extractPeopleFromMemoryText(content);
+  final petNames = extractPetNamesFromText(content);
   final localPlaces = extractPlacesFromMemoryText(content);
   final localOrgs = extractOrganizationsFromText(content, localeCode: localeCode);
   final eventTitle = _resolveEventTitle(
@@ -137,6 +144,7 @@ MemoryEntityBundle extractMemoryEntities(
   var food = <String>[];
   var hobbies = <String>[];
   var emotions = <String>[];
+  var pets = <String>[...petNames];
 
   final semantic = extractSemanticFromText(content);
   events.addAll(semantic.events);
@@ -146,6 +154,26 @@ MemoryEntityBundle extractMemoryEntities(
   hobbies.addAll(semantic.hobbies);
   emotions.addAll(semantic.emotions);
   activities.addAll(semantic.activities);
+
+  final flowFrame = parseMemorySemanticFlow(content, localeCode: localeCode);
+  final seenPeople = people.map((p) => normalizeKoreanPersonName(p)).toSet();
+  final seenOrgs = orgs.toSet();
+  final seenActivities = activities.toSet();
+  final seenEvents = events.toSet();
+  final seenPlaces = places.toSet();
+  mergeSemanticFlowIntoLists(
+    frame: flowFrame,
+    people: people,
+    organizations: orgs,
+    activities: activities,
+    events: events,
+    places: places,
+    seenPeople: seenPeople,
+    seenOrgs: seenOrgs,
+    seenActivities: seenActivities,
+    seenEvents: seenEvents,
+    seenPlaces: seenPlaces,
+  );
 
   if (effectiveFragment != null) {
     for (final s in effectiveFragment.satellites) {
@@ -160,7 +188,12 @@ MemoryEntityBundle extractMemoryEntities(
             }
           }
         case 'place':
-          if (!people.contains(label)) places.add(label);
+          final norm = normalizeKoreanPersonName(label);
+          if (isPersonLabelNotPlace(norm) && !isBlockedPersonName(norm)) {
+            people.add(norm);
+          } else if (!people.contains(label) && !people.contains(norm)) {
+            places.add(label);
+          }
         case 'organization':
           orgs.add(label);
         case 'activity':
@@ -190,13 +223,22 @@ MemoryEntityBundle extractMemoryEntities(
   }
 
   people = _dedupeOrdered(people)
+      .where((p) => !petNames.contains(p))
+      .where((p) => !isPetDescriptorToken(p) && !isPetOrdinalToken(p))
       .where((p) => !isKnownFoodLabel(p) && !isKnownContentLabel(p))
+      .where((p) => !isKnownInterestLabel(p))
+      .where((p) => !isKnownEmotionLabel(p))
+      .where((p) => !isGraphMealCompanionToken(p))
       .where((p) => !isGraphVenueToken(p) && !_looksLikePlaceLabel(p))
       .where((p) => !isGraphMorphologyJunkToken(p))
       .take(kGraphMaxPeopleSatellites)
       .toList();
-  places = _dedupeOrdered(places).take(kGraphMaxPlaceSatellites).toList();
+  places = _prioritizeMedicalPlaces(places);
   orgs = _dedupeOrdered(orgs).take(kGraphMaxOrgSatellites).toList();
+  pets = _dedupeOrdered(pets).take(6).toList();
+  if (pets.isNotEmpty) {
+    interests.removeWhere((i) => i == '반려견' || i == '반려동물');
+  }
   activities.addAll(_extractActivitiesFromContent(content, people, memory.entities));
   activities = _dedupeOrdered(activities)
       .where((a) => !_isPersonPlaceCompositeActivity(a))
@@ -218,8 +260,26 @@ MemoryEntityBundle extractMemoryEntities(
         isKnownFoodLabel(norm) || isKnownContentLabel(norm)) {
       continue;
     }
-    if (isGraphVenueToken(trimmed) || isGraphVenueToken(norm) || _looksLikePlaceLabel(trimmed) || looksLikeKoreanPlaceName(trimmed)) {
+    if (isKnownInterestLabel(trimmed) || isKnownInterestLabel(norm)) {
+      interests.add(trimmed);
+      continue;
+    }
+    if (isKnownEmotionLabel(trimmed) || isKnownEmotionLabel(norm)) {
+      emotions.add(trimmed);
+      continue;
+    }
+    if (isGraphMealCompanionToken(trimmed) || isGraphMealCompanionToken(norm)) {
+      continue;
+    }
+    if ((isGraphVenueToken(trimmed) || isGraphVenueToken(norm) || _looksLikePlaceLabel(trimmed) ||
+            looksLikeKoreanPlaceName(trimmed)) &&
+        !isPersonLabelNotPlace(trimmed) &&
+        !isPersonLabelNotPlace(norm)) {
       places.add(trimmed);
+      continue;
+    }
+    if (isLikelyPetNameInContext(norm, content)) {
+      interests.add(norm);
       continue;
     }
     if ((isFamilyRelationTerm(norm) || isLikelyKoreanPersonName(norm)) && !isBlockedPersonName(norm)) {
@@ -228,12 +288,17 @@ MemoryEntityBundle extractMemoryEntities(
   }
 
   people = _dedupeOrdered(people)
+      .where((p) => !petNames.contains(p))
+      .where((p) => !isPetDescriptorToken(p) && !isPetOrdinalToken(p))
       .where((p) => !isKnownFoodLabel(p) && !isKnownContentLabel(p))
+      .where((p) => !isKnownInterestLabel(p))
+      .where((p) => !isKnownEmotionLabel(p))
+      .where((p) => !isGraphMealCompanionToken(p))
       .where((p) => !isGraphVenueToken(p) && !_looksLikePlaceLabel(p))
       .where((p) => !isGraphMorphologyJunkToken(p))
       .take(kGraphMaxPeopleSatellites)
       .toList();
-  places = _dedupeOrdered(places).take(kGraphMaxPlaceSatellites).toList();
+  places = _prioritizeMedicalPlaces(places);
 
   if (memory.type != 'graph_note') {
     final self = selfPersonGraphLabel(localeCode);
@@ -245,6 +310,7 @@ MemoryEntityBundle extractMemoryEntities(
   return MemoryEntityBundle(
     eventTitle: eventTitle,
     people: people,
+    pets: pets,
     organizations: orgs,
     places: places,
     activities: activities,
@@ -417,6 +483,12 @@ String _resolveEventTitle({
   required String localeCode,
   GraphMemoryFragment? aiFragment,
 }) {
+  final flow = parseMemorySemanticFlow(content, localeCode: localeCode);
+  if (flow.primaryEvent != null &&
+      (flow.depthTree.hasDepth || flow.orgSegments.any((s) => s.people.isNotEmpty))) {
+    return flow.primaryEvent!;
+  }
+
   if (memoryTextHasMultipleClauses(content)) {
     final composed = composeMemoryHubTitle(content, localeCode: localeCode);
     if (isMeaningfulHubTitle(composed, localeCode: localeCode)) return composed;
@@ -534,6 +606,14 @@ String _textAfterSubject(String text) {
   return text.substring(subject.end).trim();
 }
 
+/// "짬나는 시간에"처럼 부사구에서 잘린 토큰(짬나)을 인물에서 제외합니다.
+bool _isAdverbialNaPhrase(String token, String context) {
+  final t = token.trim();
+  if (t.length < 2 || !t.endsWith('나')) return false;
+  final escaped = RegExp.escape(t);
+  return RegExp('$escaped는\\s+(?:시간|순간|때|동안|사이)').hasMatch(context);
+}
+
 List<String> extractPeopleFromMemoryText(String text) {
   final value = text.trim();
   if (value.isEmpty) return [];
@@ -558,8 +638,14 @@ List<String> extractPeopleFromMemoryText(String text) {
       if (seen.add(token)) names.add(token);
       return;
     }
-    if (isKnownFoodLabel(token) || isKnownContentLabel(token)) return;
+    if (isKnownFoodLabel(token) || isKnownContentLabel(token) || isKnownInterestLabel(token)) return;
+    if (isKnownEmotionLabel(token) || isGraphMealCompanionToken(token)) return;
+    if (isLikelyPetNameInContext(token, value)) return;
+    if (_isAdverbialNaPhrase(token, value)) return;
+    if (isPetDescriptorToken(token) || isPetOrdinalToken(token)) return;
     if (isGraphMorphologyJunkToken(token)) return;
+    if (isMedicalGraphNoisePhrase(token)) return;
+    if (isMedicalNonPersonToken(token)) return;
     final name = normalizeKoreanPersonName(token);
     if (isBlockedPersonName(name)) return;
     if (!isLikelyKoreanPersonName(name)) return;
@@ -578,7 +664,13 @@ List<String> extractPeopleFromMemoryText(String text) {
     add(match.group(1));
   }
 
-  for (final match in RegExp(r'로는\s*([^\.]+?)(?=에서\s|이렇게|모두\s*\d|참석하였고\s*보호사|$)').allMatches(value)) {
+  for (final match
+      in RegExp(r'([가-힣]{2,4})(?:간호과장|간호팀장|팀장|과장|원장|부장|이사|대리|사원)(?=[\s,.]|$)').allMatches(value)) {
+    add(match.group(1));
+  }
+
+  for (final match
+      in RegExp(r'(?:간호사|보호사|의사|담당자|참석자)로는\s*([^\.]+?)(?=에서\s|이렇게|모두\s*\d|참석하였고|$)').allMatches(value)) {
     _parseNameListSegment(match.group(1)!, add);
   }
 
@@ -603,6 +695,10 @@ List<String> extractPeopleFromMemoryText(String text) {
     add(name);
   }
 
+  if (RegExp(r'[,，]\s*나(?:\s|이|가|는|은|이서|이랑|와|과|,|\.|$)').hasMatch(value)) {
+    add('나');
+  }
+
   final outingList = RegExp(
     r'\d{4}년\s*\d{1,2}월\s*\d{1,2}일\s+([^.\n]+?)(?=이?\s*(?:이렇게|\d+\s*명))',
   ).firstMatch(value);
@@ -617,6 +713,8 @@ List<String> extractPeopleFromMemoryText(String text) {
   }
 
   final patterns = [
+    // "홍길동이 부산에서" — 주어 조사 이
+    RegExp(r'([가-힣]{2,4})이(?=\s)'),
     RegExp(r'([가-힣]{2,4})이하고(?=[\s,.]|$)'),
     RegExp(r'([가-힣]{2,4})(?:이랑|랑|와|과)(?=[\s,.]|$)'),
     // "민수에게", "영희한테"
@@ -625,7 +723,7 @@ List<String> extractPeopleFromMemoryText(String text) {
     RegExp(r'([가-힣]{2,4})(?:을|를)\s+만나'),
     // "지영의 남동생", "민수의 대학 동기"
     RegExp(r'([가-힣]{2,4})의\s+(?:[가-힣]{1,8}\s+)?(?:남동생|여동생|형|누나|오빠|언니|동생|동기|친구)'),
-    // "지영은", "민수는", "철수는"
+    // "지영은", "민수는" — 의료·역할 토큰 제외.
     RegExp(r'([가-힣]{2,4})(?:은|는)(?=[\s,.]|$)'),
     // "민수와 지영은 …" — 뒤쪽 공동 주어.
     RegExp(r'(?:와|과)\s+([가-힣]{2,4})(?:은|는)(?=[\s,.]|$)'),
@@ -633,7 +731,16 @@ List<String> extractPeopleFromMemoryText(String text) {
   ];
   for (final pattern in patterns) {
     for (final match in pattern.allMatches(value)) {
-      add(match.group(1));
+      final token = match.group(1);
+      if (token == null) continue;
+      final start = match.start;
+      final contextStart = start > 6 ? start - 6 : 0;
+      final contextEnd = match.end + 4 < value.length ? match.end + 4 : value.length;
+      final window = value.substring(contextStart, contextEnd);
+      if (RegExp(r'(?:외진)?현황').hasMatch(window) && RegExp(r'(?:으로|으로는|보고)').hasMatch(window)) {
+        continue;
+      }
+      add(token);
     }
   }
 
@@ -669,15 +776,35 @@ List<String> extractPlacesFromMemoryText(String text) {
   void consider(String? raw) {
     final value = raw?.trim().replaceAll(RegExp(r'\s+'), ' ') ?? '';
     if (value.isEmpty || value.length > 24) return;
+    if (isMedicalGraphNoisePhrase(value)) return;
     if (value.contains('와 ') || value.contains('과 ')) return;
     if (isPersonPlaceCompositeActivity(value)) return;
     final minLen = isGraphVenueToken(value) ? 2 : 3;
     if (value.length < minLen) return;
     if (peopleNoiseInPlace(value)) return;
+    // 「성수동에서」처럼 행정동 문맥이면 성+동 인명 휴리스틱을 우회.
+    final adminDongContext = value.endsWith('동') &&
+        value.length >= 3 &&
+        RegExp('${RegExp.escape(value)}(?:에서|에\\s|에\$)').hasMatch(text);
+    if (isPersonLabelNotPlace(value) && !adminDongContext) return;
     if (isMisleadingPlaceChonToken(value)) return;
     if (isGraphMorphologyJunkToken(value)) return;
     if (isJunkEntityOrKeyword(value) || isGraphMetaContent(value)) return;
-    if (seen.add(value)) results.add(value);
+    final norm = normalizeGraphEntityLabel(value);
+    if (norm.isEmpty) return;
+    if (seen.add(norm)) results.add(norm);
+  }
+
+  for (final place in extractMedicalPlaceTokens(text)) {
+    consider(place);
+  }
+
+  for (final place in extractQualityPlaces(text)) {
+    consider(place);
+  }
+
+  for (final match in RegExp(r'([가-힣]{2,8}동)(?=에서|에\s|에$)').allMatches(text)) {
+    consider(match.group(1));
   }
 
   for (final match in RegExp(r'(?:와|랑|이랑)\s+([가-힣]{2,12}(?:카페|식당|요리집|술집|병원)?)(?=\s*(?:에서|에\b|에\s))').allMatches(text)) {
@@ -692,12 +819,17 @@ List<String> extractPlacesFromMemoryText(String text) {
     consider(match.group(1));
   }
 
-  for (final match in RegExp(r'([가-힣]{2,12}(?:해수욕장|해변|공원|시장|역|천|계곡))').allMatches(text)) {
+  for (final match in RegExp(r'([가-힣]{2,12}\s*(?:해수욕장|해변|공원|시장|역|천|계곡))').allMatches(text)) {
     consider(match.group(1));
   }
 
-  for (final match in RegExp(r'([가-힣]{2,8}(?:\s+[가-힣]{2,8})?해수욕장)').allMatches(text)) {
+  for (final match in RegExp(r'([가-힣]{2,8}(?:\s+[가-힣]{2,8})?\s*해수욕장)').allMatches(text)) {
     consider(match.group(1));
+  }
+
+  for (final match in RegExp(r'((?:부산\s*)?광안리(?:\s*해수욕장)?)').allMatches(text)) {
+    final raw = match.group(1)!;
+    consider(raw.contains('해수욕장') ? raw : '$raw 해수욕장');
   }
 
   for (final match in RegExp(r'([가-힣]{2,8}(?:천|산|강|교|계곡|해변|공원))(?=에\s|에서\s|에$)').allMatches(text)) {
@@ -727,10 +859,16 @@ List<String> extractPlacesFromMemoryText(String text) {
       while (start > 0 && RegExp(r'[가-힣 ]').hasMatch(text[start - 1])) {
         start--;
       }
-      final place = text.substring(start, idx + suffix.length).trim();
-      if (place.length >= suffix.length && place.length <= 24 && seen.add(place)) {
-        results.add(place);
+      var place = text.substring(start, idx + suffix.length).trim();
+      // 「6명이 부산 광안리 해수욕장」→ 앞쪽 인원 수사 제거
+      place = place.replaceFirst(RegExp(r'^.*(?:명이|명이서)\s*'), '').trim();
+      if (place.length < suffix.length) {
+        place = text.substring(idx - 6 < 0 ? 0 : idx - 6, idx + suffix.length).trim();
+        // 광안리 해수욕장 정도만 남기기
+        final m = RegExp(r'([가-힣]{2,8}\s*)?([가-힣]{2,8}\s*해수욕장)').firstMatch(place);
+        if (m != null) place = m.group(0)!.trim();
       }
+      consider(place);
     }
   }
 
@@ -738,13 +876,23 @@ List<String> extractPlacesFromMemoryText(String text) {
 }
 
 bool peopleNoiseInPlace(String value) {
-  return RegExp(r'(?:참석|보호사|간호사|이동|서충|이렇게|명이서|식구|\d)').hasMatch(value);
+  if (isMedicalGraphNoisePhrase(value)) return true;
+  if (value.contains('명이') || value.contains('명이서') || value.contains('식구')) {
+    return true;
+  }
+  return RegExp(r'(?:참석|보호사|간호사|이동|서충|이렇게|\d|환자는|외진현황|으로는|보고로는|현황)').hasMatch(value);
 }
 
 bool _looksLikePlaceLabel(String word) {
   final value = word.trim().replaceAll(RegExp(r'\s+'), ' ');
   if (isInternalMemoryEntityTag(value)) return false;
+  if (isMedicalGraphNoisePhrase(value)) return false;
+  if (isMedicalPlaceLikeLabel(value)) return true;
   if (isPersonPlaceCompositeActivity(value)) return false;
+  if (looksLikePersonNameEndingInDong(value) || looksLikePersonNameEndingInHo(value)) {
+    return false;
+  }
+  if (isPersonLabelNotPlace(value)) return false;
   if (looksLikeKoreanPlaceName(value)) return true;
   if (RegExp(r'(?:요리집|식당|카페|병원|역|해수욕장|해변)$').hasMatch(value)) return true;
   if (value.contains(' ') && RegExp(r'(?:해수욕장|해변|공원|요리집|식당)$').hasMatch(value)) return true;
@@ -810,7 +958,7 @@ const _graphKeepSatelliteKeywords = {
   '컴퓨터', '컴퓨터 활용 능력',
 };
 
-bool _isChipStyleHubTitle(String hub) {
+bool isChipStyleHubTitle(String hub) {
   final h = hub.replaceAll(RegExp(r'[.!?…]+$'), '').trim();
   if (!h.contains('·')) return false;
   final parts = h.split('·').map((p) => p.trim()).where((p) => p.isNotEmpty).toList();
@@ -818,20 +966,31 @@ bool _isChipStyleHubTitle(String hub) {
   return parts.every((p) => p.length <= 14 && !p.contains('와') && !p.contains('에서'));
 }
 
+/// 허브가 「이미경, 김경희, … 수박 먹었다」처럼 인명 나열 문장이면 위성 인물은 유지합니다.
+bool hubTitleIsNarrativeNameList(String hubTitle) {
+  final hub = hubTitle.replaceAll(RegExp(r'[.!?…]+$'), '').trim();
+  if (hub.isEmpty) return false;
+  if (extractCommaListedKoreanNames(hub).length >= 2) return true;
+  return _isNameListHeavy(hub);
+}
+
 bool shouldShowGraphSatelliteLabel(String label, {String? hubTitle}) {
   final v = label.trim();
   if (v.isEmpty || isInternalMemoryEntityTag(v)) return false;
   if (isPersonPlaceCompositeActivity(v)) return false;
   final hub = hubTitle?.trim() ?? '';
-  if (hub.isNotEmpty && _isChipStyleHubTitle(hub)) return true;
+  if (hub.isNotEmpty && isChipStyleHubTitle(hub)) return true;
+  if (hub.isNotEmpty &&
+      isLikelyKoreanPersonName(v) &&
+      hubTitleIsNarrativeNameList(hub)) {
+    return true;
+  }
   if (hub.isNotEmpty) {
     if (hub == v) return false;
-    // 가족 호칭(아들·딸 등) — 허브가 긴 문장일 때만 별도 위성 유지.
-    if (isFamilyRelationTerm(v)) {
-      if (hub.length <= v.length + 2) return false;
-      return true;
-    }
-    if (isCompoundParentTerm(v)) {
+    // 가족 호칭 — 허브에 이미 짧게만 쓰인 경우만 위성 생략. 「저녁 먹음」처럼
+    // 호칭과 무관한 짧은 허브에서는 어머니 등 위성을 유지.
+    if (isFamilyRelationTerm(v) || isCompoundParentTerm(v)) {
+      if (!hub.contains(v)) return true;
       if (hub.length <= v.length + 2) return false;
       return true;
     }
@@ -848,7 +1007,9 @@ bool shouldShowGraphSatelliteLabel(String label, {String? hubTitle}) {
         return true;
       }
       if (_looksLikePlaceLabel(v) || isGraphVenueToken(v)) {
-        return false;
+        // 짧은 장소(카페·집)만 허브 중복 시 생략. 해수욕장 등 구체 지명은 위성 유지.
+        if (v.length <= 6 && !v.contains('해수욕장') && !v.contains(' ')) return false;
+        return true;
       }
       if (isLikelyKoreanPersonName(v) && !_graphKeepSatelliteKeywords.contains(v)) {
         return false;
@@ -867,6 +1028,14 @@ List<String> userVisibleEntityLabels(
   String localeCode = 'ko',
   GraphMemoryFragment? aiFragment,
 }) {
+  if (memory.entities.contains('tag:entities_manual')) {
+    return memory.entities
+        .where((e) => !isInternalMemoryEntityTag(e) && !e.startsWith('tag:'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+  }
+
   final bundle = extractMemoryEntities(
     memory,
     localeCode: localeCode,
@@ -875,6 +1044,7 @@ List<String> userVisibleEntityLabels(
 
   final fromContent = <String>[
     ...bundle.people,
+    ...bundle.pets,
     ...bundle.places,
     ...bundle.organizations,
     ...bundle.activities,
@@ -890,6 +1060,7 @@ List<String> userVisibleEntityLabels(
     if (isLatLngLabel(e)) return false;
     if (isInternalMemoryEntityTag(e)) return false;
     if (isPersonPlaceCompositeActivity(e)) return false;
+    if (memory.entities.contains('tag:entities_manual')) return true;
     return entityLabelReferencedInMemory(e, memory);
   });
 
@@ -949,23 +1120,7 @@ List<String> _extractActivitiesFromContent(
 }
 
 List<String> extractOrganizationsFromText(String text, {String localeCode = 'ko'}) {
-  final orgs = <String>[];
-  final seen = <String>{};
-  void add(String o) {
-    if (seen.add(o)) orgs.add(o);
-  }
-
-  if (RegExp(r'병원').hasMatch(text)) add(localeCode == 'ko' ? '병원' : 'Hospital');
-  if (RegExp(r'간호과').hasMatch(text)) add(localeCode == 'ko' ? '간호과' : 'Nursing dept');
-  if (RegExp(r'보호사(?:로는|들|와|과)').hasMatch(text)) {
-    add(localeCode == 'ko' ? '보호사' : 'Care workers');
-  }
-  for (final match in RegExp(
-    r'([가-힣A-Za-z0-9]{2,12}(?:전자|그룹|은행|회사|병원|학교|대학교))(?:에서|에)\s+',
-  ).allMatches(text)) {
-    add(match.group(1)!);
-  }
-  return orgs;
+  return extractQualityOrganizations(text, localeCode: localeCode);
 }
 
 List<String> _dedupeOrdered(List<String> items) {
@@ -979,6 +1134,19 @@ List<String> _dedupeOrdered(List<String> items) {
   return out;
 }
 
+List<String> _prioritizeMedicalPlaces(List<String> places) {
+  final medical = <String>[];
+  final other = <String>[];
+  for (final p in _dedupeOrdered(places)) {
+    if (isMedicalPlaceLikeLabel(p)) {
+      medical.add(p);
+    } else {
+      other.add(p);
+    }
+  }
+  return [...medical, ...other].take(kGraphMaxPlaceSatellites).toList();
+}
+
 bool _isNameListHeavy(String line) {
   final commas = ','.allMatches(line).length;
   return commas >= 4 && !line.contains('회식') && !line.contains('회의');
@@ -989,6 +1157,9 @@ Set<String> entityKeysFromBundle(MemoryEntityBundle bundle) {
   final keys = <String>{};
   for (final p in bundle.people) {
     keys.add('person::$p');
+  }
+  for (final p in bundle.pets) {
+    keys.add('pet::$p');
   }
   for (final p in bundle.places) {
     keys.add('place::$p');
