@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="모담넷(MemoryOS) 이용 가이드 — 기능, 관계망 차별화, 환경설정" />
-  <title>모담넷(MemoryOS) 이용 가이드</title>
+  <meta name="description" content="모담넷(MemoryOS) 상세 이용 가이드 — 타임라인·검색·관계망·회상·설정·Pro·문제 해결" />
+  <title>모담넷(MemoryOS) 상세 이용 가이드</title>
   <style>
     :root {
       --bg: #0f0d18;
@@ -15,23 +15,25 @@
       --text: #f5f5f7;
       --muted: #a8a3b8;
       --border: rgba(255,255,255,.08);
+      --ok: #81c784;
+      --warn: #ffb74d;
     }
     * { box-sizing: border-box; }
     body {
       font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
       background: linear-gradient(160deg, #1e1240 0%, var(--bg) 45%, #0a0818 100%);
       color: var(--text);
-      line-height: 1.65;
+      line-height: 1.7;
       margin: 0;
       padding: 0;
     }
     .hero {
-      padding: 2.5rem 1.25rem 2rem;
+      padding: 2.5rem 1.25rem 1.5rem;
       text-align: center;
       background: radial-gradient(ellipse at 50% 0%, rgba(124,77,255,.25), transparent 60%);
     }
     .hero h1 {
-      font-size: 1.75rem;
+      font-size: 1.7rem;
       font-weight: 800;
       margin: 0 0 .5rem;
       letter-spacing: -.02em;
@@ -50,22 +52,24 @@
     nav.top {
       display: flex;
       flex-wrap: wrap;
-      gap: .5rem;
+      gap: .45rem;
       justify-content: center;
       padding: 0 1rem 1.5rem;
+      max-width: 820px;
+      margin: 0 auto;
     }
     nav.top a {
       color: var(--accent2);
       text-decoration: none;
-      font-size: .8rem;
-      padding: .4rem .75rem;
+      font-size: .78rem;
+      padding: .35rem .7rem;
       border-radius: 8px;
       border: 1px solid var(--border);
       background: var(--surface);
     }
     nav.top a:hover { background: var(--card); }
     main {
-      max-width: 720px;
+      max-width: 760px;
       margin: 0 auto;
       padding: 0 1.25rem 3rem;
     }
@@ -74,10 +78,10 @@
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 1.25rem 1.35rem;
-      margin-bottom: 1.25rem;
+      margin-bottom: 1.15rem;
     }
     h2 {
-      font-size: 1.15rem;
+      font-size: 1.12rem;
       margin: 0 0 .85rem;
       color: #fff;
       display: flex;
@@ -91,9 +95,11 @@
       background: linear-gradient(180deg, var(--accent), var(--accent2));
       border-radius: 2px;
     }
-    h3 { font-size: .95rem; color: #ddd; margin: 1.1rem 0 .5rem; }
+    h3 { font-size: .95rem; color: #ddd; margin: 1.15rem 0 .45rem; }
+    h4 { font-size: .88rem; color: #c4b5fd; margin: .9rem 0 .35rem; }
     p, li { font-size: .9rem; color: #d8d4e3; }
-    ul { padding-left: 1.2rem; }
+    ul, ol { padding-left: 1.2rem; }
+    ol li { margin: .25rem 0; }
     table {
       width: 100%;
       border-collapse: collapse;
@@ -107,15 +113,27 @@
       vertical-align: top;
     }
     th { background: var(--card); color: #c4b5fd; font-weight: 600; }
-    .compare-win { color: #81c784; font-weight: 600; }
-    .tip {
-      background: rgba(0,229,255,.08);
-      border-left: 3px solid var(--accent2);
+    .compare-win { color: var(--ok); font-weight: 600; }
+    .tip, .warn, .step {
       padding: .75rem 1rem;
       border-radius: 0 8px 8px 0;
       margin: .75rem 0;
       font-size: .85rem;
     }
+    .tip {
+      background: rgba(0,229,255,.08);
+      border-left: 3px solid var(--accent2);
+    }
+    .warn {
+      background: rgba(255,183,77,.1);
+      border-left: 3px solid var(--warn);
+    }
+    .step {
+      background: rgba(124,77,255,.1);
+      border-left: 3px solid var(--accent);
+    }
+    .toc ol { margin: .4rem 0 0; }
+    .toc a { color: var(--accent2); text-decoration: none; }
     footer {
       text-align: center;
       padding: 2rem 1rem;
@@ -124,104 +142,236 @@
       border-top: 1px solid var(--border);
     }
     footer a { color: var(--accent2); }
+    code {
+      font-size: .82em;
+      background: var(--card);
+      padding: .1rem .35rem;
+      border-radius: 4px;
+    }
+    .kbd {
+      display: inline-block;
+      padding: .05rem .4rem;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--card);
+      font-size: .78rem;
+    }
   </style>
 </head>
 <body>
   <header class="hero">
-    <h1>모담넷(MemoryOS)<br>이용 가이드</h1>
-    <p class="tagline">기억을 쌓고, 연결하고, 다시 떠올리는 방법</p>
-    <span class="badge">버전 1.0 · 2026년 7월</span>
+    <h1>모담넷(MemoryOS)<br>상세 이용 가이드</h1>
+    <p class="tagline">사용자용 — 기억 저장부터 관계망·회상·설정까지 한눈에</p>
+    <span class="badge">버전 1.0.12 · 2026년 7월</span>
   </header>
 
   <nav class="top">
-    <a href="#about">소개</a>
-    <a href="#graph">관계망 차별화</a>
-    <a href="#features">기능·활용</a>
-    <a href="#settings">환경설정</a>
-    <a href="#scenarios">시나리오</a>
-    <a href="privacy.html">개인정보 처리방침</a>
+    <a href="#toc">목차</a>
+    <a href="#start">시작</a>
+    <a href="#timeline">타임라인</a>
+    <a href="#search">검색</a>
+    <a href="#graph">관계망</a>
+    <a href="#replay">회상</a>
+    <a href="#settings">설정</a>
+    <a href="#pro">무료·Pro</a>
+    <a href="#faq">FAQ</a>
+    <a href="privacy.html">개인정보</a>
+    <a href="terms.html">이용약관</a>
   </nav>
 
   <main>
+    <section id="toc" class="toc">
+      <h2>목차</h2>
+      <ol>
+        <li><a href="#about">모담넷이란</a></li>
+        <li><a href="#start">처음 사용하기</a></li>
+        <li><a href="#timeline">타임라인 — 기억 저장</a></li>
+        <li><a href="#search">검색 — 자연어로 찾기</a></li>
+        <li><a href="#graph">관계망 — 연결 보기</a></li>
+        <li><a href="#replay">회상 — 다시 떠올리기</a></li>
+        <li><a href="#settings">설정 완전 가이드</a></li>
+        <li><a href="#pro">무료와 MemoryOS Pro</a></li>
+        <li><a href="#widget">홈 화면 위젯</a></li>
+        <li><a href="#scenarios">추천 사용 시나리오</a></li>
+        <li><a href="#faq">자주 묻는 질문 · 문제 해결</a></li>
+      </ol>
+    </section>
+
     <section id="about">
       <h2>1. 모담넷이란?</h2>
-      <p>음성·사진·텍스트로 남긴 <strong>기억</strong>을 타임라인에 쌓고, <strong>관계망</strong>으로 사람·장소·사건을 연결해 다시 찾아주는 개인 기억 앱입니다.</p>
+      <p>모담넷(MemoryOS)은 <strong>음성·사진·동영상·텍스트</strong>로 남긴 기억을 타임라인에 쌓고, <strong>관계망</strong>으로 사람·장소·사건을 연결해 다시 찾아 주는 <strong>개인 기억 앱</strong>입니다.</p>
       <ul>
-        <li><strong>기억 저장</strong> — 말하기, 사진, 메모, 위치</li>
-        <li><strong>의미 검색</strong> — 자연어 질문 (Pro·클라우드)</li>
-        <li><strong>관계망</strong> — 인물·장소·감정·이벤트 그래프</li>
-        <li><strong>회상</strong> — 월별 갤러리, 장소 알림</li>
-        <li><strong>프라이버시</strong> — 기기 전용 저장 모드</li>
+        <li><strong>기억 저장</strong> — 말하기, 사진·동영상, 메모, (선택) 위치</li>
+        <li><strong>자연어 검색</strong> — 「어머니와 어제 저녁」처럼 말하듯 검색</li>
+        <li><strong>관계망</strong> — 허브·위성 트리로 연결을 시각화</li>
+        <li><strong>회상</strong> — 월별 보기, 장소 근처 알림</li>
+        <li><strong>프라이버시</strong> — 게스트·프라이버시 모드로 기기에만 저장 가능</li>
       </ul>
+      <div class="tip"><strong>핵심 원칙:</strong> 입력은 항상 <strong>자연어</strong>로 하세요. 사람·장소·날짜·감정을 말하듯 넣으면 검색·관계망·회상이 더 정확해집니다.</div>
+    </section>
+
+    <section id="start">
+      <h2>2. 처음 사용하기</h2>
+      <ol>
+        <li>앱을 설치한 뒤 <strong>게스트</strong>로 바로 쓰거나, <strong>이메일 로그인</strong>으로 클라우드·Pro를 준비합니다.</li>
+        <li>하단 탭: <strong>타임라인 · 검색 · 관계망 · 회상</strong> (설정은 상단 톱니).</li>
+        <li>첫 기억: 마이크 버튼으로 30초만 말해 보세요. 예) 「오늘 광안리에서 어머니와 저녁 먹었어.」</li>
+        <li>타임라인에 카드가 생기면 → 관계망에서 사람·장소 연결을 확인합니다.</li>
+      </ol>
+      <div class="step"><strong>권한 안내</strong><br>
+        · 마이크 — 음성 기억<br>
+        · 카메라·사진 — 미디어 저장<br>
+        · 알림 — 장소 회상·기억 펄스<br>
+        · 위치(항상 허용 권장) — 장소 회상 알림
+      </div>
+    </section>
+
+    <section id="timeline">
+      <h2>3. 타임라인 — 기억 저장</h2>
+      <h3>저장 방법</h3>
+      <table>
+        <tr><th>방법</th><th>하는 일</th></tr>
+        <tr><td>마이크</td><td>음성 또는 키보드 입력 → 분석·저장</td></tr>
+        <tr><td>카메라</td><td>촬영 또는 갤러리. 한 카드에 사진 여러 장 가능</td></tr>
+        <tr><td>카드 탭</td><td>상세 보기 · 본문 편집 · 사진·동영상 추가/삭제 · 관계 태그 수정</td></tr>
+      </table>
+
+      <h3>잘 저장되는 말하기 예시</h3>
+      <ul>
+        <li>「어제 어머니와 강남 식당에서 저녁 먹었어.」</li>
+        <li>「6월 22일 길안천에 가족과 놀러 갔다.」</li>
+        <li>「오늘 찍은 사진 — 월영교 일몰, 바람이 시원했다.」</li>
+      </ul>
+      <div class="tip">짧은 한 단어보다 <strong>사람 + 장소 + 날짜/시간 + 감정</strong>을 함께 넣으면 관계망 품질이 크게 올라갑니다.</div>
+
+      <h3>카드에서 할 수 있는 일</h3>
+      <ul>
+        <li>본문·요약 편집</li>
+        <li><strong>관계 태그</strong>(사람·장소 등) 수정 → 관계망에 반영</li>
+        <li>사진·동영상 추가·삭제</li>
+        <li>키워드 칩 탭 → 관계망 포커스</li>
+      </ul>
+    </section>
+
+    <section id="search">
+      <h2>4. 검색 — 자연어로 찾기</h2>
+      <table>
+        <tr><th>모드</th><th>조건</th><th>예시</th></tr>
+        <tr><td>AI 의미 검색</td><td>로그인 + MemoryOS Pro</td><td>「민수랑 먹었던 식당 어디였지?」</td></tr>
+        <tr><td>로컬 자연어 검색</td><td>게스트 · 무료 · 프라이버시 모드</td><td>「어머니와 저녁」「오늘 사진」「광안리」</td></tr>
+      </table>
+      <h3>검색 팁</h3>
+      <ul>
+        <li>카드에 보이는 <strong>이름·장소·날짜</strong>를 그대로 말하듯 입력</li>
+        <li>「오늘 / 어제 / 이번 주 / 지난달」 등 날짜 표현 지원</li>
+        <li>사진·동영상만 찾을 때: 「사진」「동영상」「영상」 포함</li>
+      </ul>
+      <div class="warn">프라이버시·게스트 모드에서는 클라우드 AI 검색이 꺼집니다. 타임라인에 보이는 단어 중심으로 검색하세요.</div>
     </section>
 
     <section id="graph">
-      <h2>2. 다른 앱과 다른 관계망</h2>
-      <p>일반 메모·일기 앱은 <strong>시간순 목록</strong>이 중심입니다. 모담넷은 <strong>「무엇이 서로 연결되는가」</strong>를 먼저 보여 줍니다.</p>
+      <h2>5. 관계망 — 연결 보기</h2>
+      <p>일반 메모 앱의 폴더·날짜 목록과 달리, 모담넷은 <strong>무엇이 서로 연결되는지</strong>를 먼저 보여 줍니다.</p>
       <table>
         <tr><th>비교</th><th>일반 앱</th><th>모담넷</th></tr>
-        <tr><td>구조</td><td>폴더·태그·날짜</td><td class="compare-win">사람·장소·이벤트 허브 + 위성</td></tr>
-        <tr><td>연결</td><td>수동 태그</td><td class="compare-win">본문·AI 자동 추출, 편집 후 재정렬</td></tr>
-        <tr><td>탐색</td><td>검색어 일치</td><td class="compare-win">키워드 포커스 서브그래프</td></tr>
-        <tr><td>묶음</td><td>앨범·캘린더</td><td class="compare-win">사건 허브, 클러스터 간 황금 브리지</td></tr>
-        <tr><td>회상</td><td>없음</td><td class="compare-win">GPS 250m 이내 푸시 알림</td></tr>
-        <tr><td>신뢰</td><td>태그=사용자 책임</td><td class="compare-win">배지·노드·본문 단일 진실, 옛 이름 제거</td></tr>
+        <tr><td>구조</td><td>폴더·태그</td><td class="compare-win">허브 + 위성 (트리형)</td></tr>
+        <tr><td>연결</td><td>수동 태그</td><td class="compare-win">본문에서 자동 추출 · 편집 후 재정렬</td></tr>
+        <tr><td>탐색</td><td>검색어 일치</td><td class="compare-win">키워드 포커스 · 렌즈(사람/기억)</td></tr>
+        <tr><td>미디어</td><td>—</td><td class="compare-win">선택한 노드에만 사진·동영상</td></tr>
       </table>
-      <div class="tip">편집 후에도 관계망이 본문과 맞게 유지됩니다 — 예: 「철수」→「민수」 수정 시 옛 노드가 사라집니다.</div>
+
+      <h3>화면 조작</h3>
+      <ul>
+        <li><strong>핀치</strong> — 확대·축소 · <strong>드래그(빈 곳)</strong> — 화면 이동</li>
+        <li><strong>노드 드래그</strong> — 위치 이동 (저장됨)</li>
+        <li><strong>허브 롱프레스 후 드래그</strong> — 관련 위성 노드와 함께 이동</li>
+        <li><strong>기간</strong> — 7일 / 30일 / 90일 / 전체</li>
+        <li><strong>렌즈</strong> — 사람 | 기억 (같은 데이터의 다른 관점)</li>
+        <li><strong>색상</strong> — 사람·장소·활동·반려 등 종류별 색으로 구분</li>
+      </ul>
+
+      <h3>노드에 사진·동영상 올리기</h3>
+      <ol>
+        <li>사람·장소·활동 등 <strong>노드를 탭</strong>합니다.</li>
+        <li>「사진·동영상 보기」또는 미디어 화면에서 추가합니다.</li>
+        <li>올린 미디어는 <strong>그 노드에만</strong> 표시됩니다. (회상에서 기억에 올린 미디어가 모든 위성에 퍼지지 않습니다.)</li>
+      </ol>
+      <div class="tip">기억 카드(타임라인·회상)에 올린 사진·동영상은 그 기억·허브에 연결됩니다. 특정 인물·장소에만 붙이려면 해당 노드를 선택해 올리세요.</div>
+
+      <h3>노드 탭 후 할 수 있는 일</h3>
+      <ul>
+        <li>사진·동영상 관리</li>
+        <li>연결 기억 보기</li>
+        <li>(Pro) 노드 AI 대화로 디테일 보강</li>
+        <li>사람 노드 — 연결 차수·통계 확인</li>
+      </ul>
     </section>
 
-    <section id="features">
-      <h2>3. 핵심 기능과 활용법</h2>
-
-      <h3>타임라인</h3>
+    <section id="replay">
+      <h2>6. 회상 — 다시 떠올리기</h2>
       <ul>
-        <li><strong>마이크</strong> — 음성·키보드 → 분석 및 저장</li>
-        <li><strong>카메라</strong> — 사진 + 메모, 한 카드에 여러 장</li>
-        <li>카드 탭 → 상세·편집·미디어 관리</li>
+        <li><strong>월별</strong>로 사진·요약 보기</li>
+        <li>카드 <strong>길게 누르기</strong> — 사진·동영상과 함께 관계 미리보기</li>
+        <li>「관계망」버튼 — 그 기억만 포커스</li>
+        <li>설정에서 회상 보기 모드: 공유 / 라이트 / 갤러리</li>
       </ul>
-
-      <h3>검색</h3>
-      <table>
-        <tr><th>모드</th><th>조건</th><th>예시</th></tr>
-        <tr><td>AI 의미 검색</td><td>로그인 + Pro</td><td>「민수랑 먹었던 식당」</td></tr>
-        <tr><td>로컬 검색</td><td>게스트·프라이버시</td><td>「월영교」「6월」</td></tr>
-      </table>
-
-      <h3>관계망</h3>
-      <ul>
-        <li>상단 렌즈 <strong>사람 | 기억</strong> (같은 데이터, 다른 관점)</li>
-        <li>설정 <strong>관계망 AI</strong> — 기억 렌즈 인사이트 + 백그라운드 분석</li>
-        <li>핀치·드래그, 기간(7/30/90일), 엔티티 검색</li>
-        <li>타임라인 <strong>키워드 칩</strong> → 포커스 모드</li>
-        <li>사람·장소 <strong>위성에도 관련 기억 사진·영상</strong> 썸네일</li>
-        <li>보라=AI 유사도, 녹=관계, 황금=클러스터 브리지</li>
-      </ul>
-
-      <h3>회상 · 위젯</h3>
-      <ul>
-        <li>월별 사진·요약, 회상 보기 모드(설정)</li>
-        <li>홈 위젯 — 기억 저장·검색·관계망 바로가기</li>
-      </ul>
+      <h3>장소 기반 회상 알림</h3>
+      <ol>
+        <li>설정 → <strong>장소 기반 회상 알림</strong> ON + 알림 권한</li>
+        <li>위치 권한 → 시스템에서 <strong>항상 허용</strong></li>
+        <li>기억 저장 시 GPS 허용</li>
+        <li>(삼성·샤오미 등) 배터리 최적화에서 모담넷 <strong>최적화 안 함</strong></li>
+      </ol>
+      <p>과거 기억을 남긴 장소 근처(약 250m)에 다시 가면 푸시로 알려 줍니다.</p>
     </section>
 
     <section id="settings">
-      <h2>4. 환경설정 가이드</h2>
-      <p>앱 상단 <strong>톱니 → 설정</strong></p>
+      <h2>7. 설정 완전 가이드</h2>
+      <p>앱 상단 <span class="kbd">⚙</span> → <strong>설정</strong></p>
 
-      <h3>이용 가이드</h3>
+      <h3>도움말</h3>
       <ul>
-        <li><strong>이용 가이드 및 사용방법</strong> — 앱 안 요약</li>
-        <li><strong>PDF 가이드</strong> — 앱 안에서 PDF 보기·공유</li>
-        <li><strong>웹 안내</strong> — 이 페이지를 브라우저에서 열기</li>
+        <li><strong>이용 가이드 및 사용방법</strong> — 앱에서 선택한 <strong>언어</strong>로 요약 표시, PDF·웹 링크 포함</li>
       </ul>
 
-      <h3>회상 알림 (중요)</h3>
-      <ol>
-        <li>「장소 기반 회상 알림」 ON + 알림 권한</li>
-        <li>위치 권한 → 시스템에서 <strong>항상 허용</strong></li>
-        <li>기억 저장 시 GPS 허용</li>
-        <li>배터리 최적화 해제(삼성·샤오미 등)</li>
-      </ol>
+      <h3>요금제 · Pro</h3>
+      <ul>
+        <li>MemoryOS Pro 상태 확인 · 구매 · <strong>구매 복원</strong></li>
+        <li>구독 상태 새로고침</li>
+      </ul>
+      <div class="warn">구매 복원·결제는 <strong>Google Play 스토어로 설치한 앱</strong>에서만 정상 동작합니다. 사이드로드(로컬 APK)에서는 복원이 되지 않을 수 있습니다.</div>
+
+      <h3>알림</h3>
+      <ul>
+        <li>장소 회상 알림</li>
+        <li>기억 펄스(매일 스케줄)</li>
+        <li>서버 푸시(FCM) — 토큰 자동 저장</li>
+      </ul>
+
+      <h3>관계망</h3>
+      <ul>
+        <li><strong>관계망 AI</strong> — 인사이트·백그라운드 분석 (Pro·로그인 시)</li>
+        <li><strong>관계망 데이터 정리</strong> — 캐시·중복·옛 이름 정리</li>
+      </ul>
+
+      <h3>데이터</h3>
+      <ul>
+        <li><strong>백업 보내기 / 가져오기</strong> — JSON으로 기기 간 이전</li>
+        <li>계정 및 데이터 삭제</li>
+      </ul>
+
+      <h3>외관 · 언어</h3>
+      <ul>
+        <li><strong>테마 색상</strong> — 선택 시 체크·테두리로 현재 색 표시</li>
+        <li><strong>언어</strong> — 한·영·일·중(간/번)·스·프·독·브라질 포·베트남 (UI·앱 내 가이드 연동)</li>
+      </ul>
+
+      <h3>프라이버시 · 잠금</h3>
+      <ul>
+        <li><strong>프라이버시 모드</strong> — 새 기억을 기기에만 저장 (클라우드·AI 없음)</li>
+        <li><strong>게스트</strong> — 로그인 없이 기기 전용</li>
+        <li>기기 잠금 — 지문·패턴</li>
+      </ul>
 
       <h3>사진 인식(OCR)</h3>
       <table>
@@ -230,38 +380,83 @@
         <tr><td>저비용</td><td>AI 해상도 낮춤, 한도 절약</td></tr>
         <tr><td>AI 전용</td><td>가장 풍부한 분석</td></tr>
       </table>
+    </section>
 
-      <h3>관계망 · 프라이버시</h3>
-      <ul>
-        <li><strong>관계망 AI</strong> — 인사이트 표시 + Pro·로그인 시 백그라운드 분석</li>
-        <li><strong>관계망 데이터 정리</strong> — 캐시·중복 정리</li>
-        <li><strong>프라이버시 모드</strong> — 기기만 저장</li>
-        <li><strong>테마·언어·회상 모드</strong> — 개인화</li>
-      </ul>
+    <section id="pro">
+      <h2>8. 무료와 MemoryOS Pro</h2>
+      <table>
+        <tr><th>구분</th><th>무료 · 게스트 · 프라이버시</th><th>MemoryOS Pro</th></tr>
+        <tr><td>기억 저장</td><td class="compare-win">기기에서 즉시</td><td class="compare-win">클라우드 동기화</td></tr>
+        <tr><td>관계망</td><td class="compare-win">로컬 규칙으로 구성</td><td class="compare-win">+ AI 인사이트·Graph AI</td></tr>
+        <tr><td>검색</td><td>로컬 자연어·키워드</td><td class="compare-win">의미 검색·AI 답변</td></tr>
+        <tr><td>사진 분석</td><td>기본</td><td class="compare-win">AI 분석</td></tr>
+        <tr><td>장소 회상 알림</td><td class="compare-win">가능</td><td class="compare-win">가능</td></tr>
+      </table>
+      <p>구독은 Google Play에서 관리합니다. 해지: Play 스토어 → 결제 및 구독.</p>
+      <h4>구매 복원</h4>
+      <p>설정 → MemoryOS Pro → <strong>구매 복원</strong>. 같은 Google 계정으로 Play에서 설치한 기기에서 실행하세요.</p>
+    </section>
+
+    <section id="widget">
+      <h2>9. 홈 화면 위젯</h2>
+      <ol>
+        <li>홈 화면 빈 곳 <strong>길게 누르기</strong> → 위젯</li>
+        <li><strong>모담넷 / MemoryOS</strong> 위젯 추가</li>
+        <li>최신 기억 미리보기 · 기억 저장 · 검색 · 관계망 바로가기</li>
+      </ol>
+      <div class="tip">위젯이 안 보이면 앱을 최신으로 업데이트한 뒤 위젯을 삭제하고 다시 추가하세요.</div>
     </section>
 
     <section id="scenarios">
-      <h2>5. 추천 시나리오</h2>
+      <h2>10. 추천 사용 시나리오</h2>
       <h3>일상</h3>
-      <p>마이크 30초 → 타임라인 칩 확인 → 관계망 위성 확인</p>
-      <h3>여행</h3>
-      <p>사진+메모 → 회상 월별 보기 → 같은 장소 재방문 시 알림</p>
-      <h3>사람 중심</h3>
-      <p>이름 칩 탭 → 관계망 사람 렌즈·포커스 → 노드 AI 대화(Pro)</p>
+      <ol>
+        <li>마이크로 30초 말하기 → 저장</li>
+        <li>타임라인에서 키워드 칩 확인</li>
+        <li>관계망에서 사람·장소 위성 확인</li>
+      </ol>
+      <h3>여행·나들이</h3>
+      <ol>
+        <li>사진 + 「○○에서 △△와」 메모</li>
+        <li>회상 탭에서 월별 확인</li>
+        <li>같은 장소 재방문 → 회상 알림</li>
+      </ol>
+      <h3>사람 중심 추억</h3>
+      <ol>
+        <li>검색 또는 칩에서 이름 탭</li>
+        <li>관계망 사람 렌즈 / 포커스</li>
+        <li>해당 노드에만 사진·동영상 추가</li>
+        <li>(Pro) 노드 AI로 디테일 보강</li>
+      </ol>
+    </section>
 
-      <h3>문제 해결</h3>
+    <section id="faq">
+      <h2>11. 자주 묻는 질문 · 문제 해결</h2>
       <table>
         <tr><th>증상</th><th>해결</th></tr>
-        <tr><td>알림 없음</td><td>위치 항상 허용, 배터리 최적화 해제</td></tr>
-        <tr><td>옛 이름 노드</td><td>앱 재시작 또는 관계망 데이터 정리</td></tr>
-        <tr><td>검색 없음</td><td>프라이버시 모드면 카드 단어로 검색</td></tr>
+        <tr><td>회상 알림이 안 옴</td><td>위치 <strong>항상 허용</strong>, 배터리 최적화 해제, GPS가 붙은 기억인지 확인</td></tr>
+        <tr><td>관계망에 옛 이름이 남음</td><td>앱 재시작 또는 설정 → 관계망 데이터 정리</td></tr>
+        <tr><td>검색 결과 없음</td><td>카드에 보이는 단어로 검색 · 프라이버시 모드면 AI 검색 불가</td></tr>
+        <tr><td>모든 노드에 동영상 표시</td><td>최신 버전(1.0.12+)으로 업데이트 · 노드별 미디어는 해당 노드에만 표시</td></tr>
+        <tr><td>구매 복원 안 됨</td><td>Play 스토어 설치본인지 확인 · 구매 복원 재시도 · 구독 상태 새로고침</td></tr>
+        <tr><td>드래그가 느림</td><td>최신 버전으로 업데이트 · 기간 필터를 줄여 노드 수 감소</td></tr>
+        <tr><td>위젯 추가 실패</td><td>위젯 삭제 후 재추가 · 앱 최신 설치</td></tr>
+        <tr><td>데이터가 사라진 것 같음</td><td>설정 → 백업 가져오기 · 같은 Google/계정인지 확인</td></tr>
       </table>
+
+      <h3>무료 vs Pro를 헷갈릴 때</h3>
+      <p>관계망 <strong>골격</strong>과 키워드 검색은 무료에서도 동작합니다. 「의미 검색·AI 답변·사진 AI·관계망 AI」는 Pro입니다. 검색 화면에 로컬/Pro 안내 배너가 표시됩니다.</p>
     </section>
   </main>
 
   <footer>
     <p>문의: <a href="mailto:imsk0126@gmail.com">imsk0126@gmail.com</a></p>
-    <p><a href="privacy.html">개인정보 처리방침</a> · © 2026 모담넷(MemoryOS)</p>
+    <p>
+      <a href="privacy.html">개인정보 처리방침</a> ·
+      <a href="terms.html">이용약관</a> ·
+      <a href="https://sungkuk-lim.github.io/personal_cognitiv/user_guide.html">웹 가이드</a>
+    </p>
+    <p>© 2026 모담넷(MemoryOS) · theNext</p>
   </footer>
 </body>
 </html>
