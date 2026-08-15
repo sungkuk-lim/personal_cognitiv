@@ -17,7 +17,6 @@ import '../../services/background_recall_worker.dart';
 import '../../services/memory_pulse_worker.dart';
 import '../../services/graph_cleanup_service.dart';
 import '../../services/location_permission_service.dart';
-import '../../services/recall_background_coordinator.dart';
 import '../../services/local_memory_store.dart';
 import '../../services/subscription_service.dart';
 import '../../services/account_deletion_service.dart';
@@ -30,10 +29,7 @@ import '../../features/auth/pattern_lock_screen.dart';
 import '../../features/legal/legal_document_screen.dart';
 import '../../features/trust/trust_dashboard_screen.dart';
 import 'location_permission_tile.dart';
-import 'settings_language_section.dart';
-import 'settings_memory_film_tile.dart';
 import 'settings_plan_cards.dart';
-import 'settings_recommended_setup.dart';
 import 'settings_section_header.dart';
 import 'user_guide_pdf_screen.dart';
 
@@ -96,8 +92,6 @@ class SettingsScreen extends ConsumerWidget {
         addRepaintBoundaries: true,
         addAutomaticKeepAlives: true,
         children: [
-          const SettingsLanguageSection(),
-          const Divider(),
           SettingsSectionHeader(
             title: t['settings_sec_help']!,
             subtitle: t['settings_sec_help_sub']!,
@@ -109,14 +103,6 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: Text(t['user_guide_subtitle']!),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _showUsageGuide(context, t),
-          ),
-          const Divider(),
-          const SettingsMemoryFilmSection(),
-          const Divider(),
-          SettingsRecommendedSetup(
-            onOpenWidgetGuide: () => _showWidgetGuide(context, t),
-            onOpenRecallGuide: () =>
-                _showUsageGuide(context, t, scrollToRecall: true),
           ),
           const Divider(),
           SettingsSectionHeader(
@@ -135,7 +121,7 @@ class SettingsScreen extends ConsumerWidget {
                 SnackBar(content: Text(t['pro_restore_working'] ?? 'Restoring…')),
               );
               try {
-                await SubscriptionService.instance.ensureInitialized();
+                await SubscriptionService.instance.initialize();
                 final status = await SubscriptionService.instance.restorePurchases();
                 if (!context.mounted) return;
                 if (status == null) {
@@ -178,7 +164,7 @@ class SettingsScreen extends ConsumerWidget {
                 SnackBar(content: Text(t['pro_refresh_working'] ?? 'Refreshing…')),
               );
               try {
-                await SubscriptionService.instance.ensureInitialized();
+                await SubscriptionService.instance.initialize();
                 final refreshed = await SubscriptionService.instance.refreshEntitlements();
                 if (!context.mounted) return;
                 ref.read(subscriptionStatusProvider.notifier).state = refreshed;
@@ -320,27 +306,20 @@ class SettingsScreen extends ConsumerWidget {
             value: ref.watch(proactiveRecallEnabledProvider),
             onChanged: (enabled) async {
               ref.read(proactiveRecallEnabledProvider.notifier).state = enabled;
-              await writeProactiveRecallEnabled(ref.read(preferencesProvider), enabled);
+              final prefs = ref.read(preferencesProvider);
+              await writeProactiveRecallEnabled(prefs, enabled);
               if (enabled) {
-                final result = await RecallBackgroundCoordinator.enableAndSync(
-                  prefs: ref.read(preferencesProvider),
-                  memories: ref.read(memoryListProvider),
+                await BackgroundRecallWorker.register();
+                await BackgroundRecallWorker.saveMemorySnapshot(
+                  prefs,
+                  ref.read(memoryListProvider),
                 );
-                if (context.mounted && !result.backgroundLocation) {
+                final bgOk =
+                    await LocationPermissionService.requestBackgroundLocationForRecall();
+                if (context.mounted && !bgOk) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(t['proactive_recall_bg_hint']!),
-                      action: SnackBarAction(
-                        label: t['proactive_recall_open_settings']!,
-                        onPressed: LocationPermissionService.openAppSettings,
-                      ),
-                    ),
-                  );
-                }
-                if (context.mounted && !result.batteryUnrestricted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(t['proactive_recall_battery_hint']!),
                       action: SnackBarAction(
                         label: t['proactive_recall_open_settings']!,
                         onPressed: LocationPermissionService.openAppSettings,
@@ -760,18 +739,6 @@ class SettingsScreen extends ConsumerWidget {
   }
 
   String _cloudSyncMessage(Map<String, String> t, MemoryCloudSyncReport report) {
-    switch (report.skipReason) {
-      case MemoryCloudSyncSkipReason.notConfigured:
-        return t['cloud_sync_need_config'] ?? '클라우드가 설정되지 않은 설치본입니다.';
-      case MemoryCloudSyncSkipReason.notLoggedIn:
-        return t['cloud_sync_need_login'] ?? '동기화하려면 로그인이 필요합니다.';
-      case MemoryCloudSyncSkipReason.localOnlyMode:
-        return t['cloud_sync_local_only'] ?? '게스트·프라이버시 모드에서는 클라우드 동기화를 사용할 수 없습니다.';
-      case MemoryCloudSyncSkipReason.noPro:
-        return t['cloud_sync_need_pro'] ?? '클라우드 동기화는 MemoryOS Pro가 필요합니다.';
-      case MemoryCloudSyncSkipReason.none:
-        break;
-    }
     if (report.uploaded > 0 && report.failed > 0) {
       return (t['cloud_sync_partial'] ?? '업로드 {uploaded}건 · 실패 {failed}건')
           .replaceAll('{uploaded}', '${report.uploaded}')
@@ -781,14 +748,8 @@ class SettingsScreen extends ConsumerWidget {
       return t['cloud_sync_done']!.replaceAll('{uploaded}', '${report.uploaded}');
     }
     if (report.failed > 0) {
-      final base = (t['cloud_sync_failed'] ?? '업로드에 실패했습니다 ({failed}건). 나중에 다시 시도하세요.')
+      return (t['cloud_sync_failed'] ?? '업로드에 실패했습니다 ({failed}건). 나중에 다시 시도하세요.')
           .replaceAll('{failed}', '${report.failed}');
-      final err = report.firstError;
-      if (err != null && err.isNotEmpty) {
-        final short = err.replaceAll(RegExp(r'\s+'), ' ').trim();
-        return '$base (${short.length > 120 ? '${short.substring(0, 117)}…' : short})';
-      }
-      return base;
     }
     return t['cloud_sync_none']!;
   }
