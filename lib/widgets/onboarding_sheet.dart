@@ -35,6 +35,8 @@ Future<void> showOnboardingIfNeeded(BuildContext context, WidgetRef ref) async {
               _row(ctx, Icons.search_rounded, t['onboarding_search']!),
               _row(ctx, Icons.hub_outlined, t['onboarding_graph']!),
               _row(ctx, Icons.location_on_outlined, t['onboarding_recall']!),
+              if ((t['onboarding_film'] ?? '').isNotEmpty)
+                _row(ctx, Icons.movie_creation_outlined, t['onboarding_film']!),
               const SizedBox(height: 24),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx),

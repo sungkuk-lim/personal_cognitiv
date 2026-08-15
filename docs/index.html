@@ -15,6 +15,16 @@
       background: #f8f7fc;
     }
     h1 { font-size: 1.5rem; color: #5c3dc9; }
+    .badge {
+      display: inline-block;
+      margin: .35rem 0 1rem;
+      padding: .3rem .75rem;
+      border-radius: 999px;
+      background: #ede9fe;
+      color: #5c3dc9;
+      font-size: .8rem;
+      font-weight: 700;
+    }
     .card {
       background: #fff;
       border-radius: 12px;
@@ -37,21 +47,41 @@
       color: #5c3dc9;
       border: 1px solid #c4b5fd;
     }
+    ul { padding-left: 1.2rem; margin: .5rem 0 0; }
+    li { margin: .35rem 0; font-size: .95rem; }
+    .muted { color: #555; font-size: .9rem; }
   </style>
 </head>
 <body>
   <h1>모담넷(MemoryOS)</h1>
   <p>개인 기억·관계망 앱</p>
+  <span class="badge">버전 1.0.28 (32) · 2026년 8월</span>
+
+  <div class="card">
+    <p><strong>1.0.28 핵심</strong></p>
+    <ul>
+      <li><strong>기억 영상 (Pro)</strong> — 템플릿 6종 · 얼굴 중심 Ken Burns · mp4 저장/공유</li>
+      <li>내보내기 중단 시 앱 재실행으로 <strong>이어서 완성</strong></li>
+      <li>설정 상단 언어 · 기억 영상 바로가기 · Pro 구매 복원 안정화</li>
+      <li>타임라인·검색·관계망·회상 핵심 루프 (1.0.25+ 기반)</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <p><strong>출시 상태 (요약)</strong></p>
+    <p class="muted">비공개·내부 테스트에 <strong>1.0.28 (32)</strong> 반영. 프로덕션 액세스 승인 후 정식 공개 예정입니다. 구독·정산은 Google Play를 통해 처리됩니다.</p>
+  </div>
+
   <div class="card">
     <p><strong>문서</strong></p>
-    <a href="user_guide.html">📖 이용 가이드 — 기능·관계망·환경설정</a>
+    <a href="user_guide.html">📖 이용 가이드 — 기능·사용방법 (1.0.28)</a>
     <a href="privacy.html" class="secondary">🔒 개인정보 처리방침</a>
     <a href="terms.html" class="secondary">📄 이용약관</a>
   </div>
   <div class="card">
     <p><strong>Pro 구독</strong></p>
-    <p>Google Play 인앱 구독으로 결제됩니다. 월·연 요금은 스토어에 표시된 금액이 적용됩니다.</p>
-    <p style="font-size:.9rem;color:#555;">문의: Play 스토어 앱 페이지 또는 앱 내 설정 → 고객 지원</p>
+    <p>Google Play 인앱 구독으로 결제됩니다. 월·연 요금은 스토어에 표시된 금액이 적용됩니다. 기억 영상·AI 검색·클라우드 등은 Pro에 포함됩니다.</p>
+    <p class="muted">문의: imsk0126@gmail.com · 앱 설정 → 이용 가이드</p>
   </div>
 </body>
 </html>

@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:url_launcher/url_launcher.dart';
 
@@ -11,7 +9,6 @@ import '../../core/env.dart';
 import '../../core/ocr_config.dart';
 import '../../core/prefs.dart';
 import '../../core/replay_config.dart';
-import '../../l10n/app_locales.dart';
 import '../../providers/app_providers.dart';
 import '../../providers/person_avatar_provider.dart';
 import '../../providers/memory_notifier.dart';
@@ -20,6 +17,7 @@ import '../../services/background_recall_worker.dart';
 import '../../services/memory_pulse_worker.dart';
 import '../../services/graph_cleanup_service.dart';
 import '../../services/location_permission_service.dart';
+import '../../services/recall_background_coordinator.dart';
 import '../../services/local_memory_store.dart';
 import '../../services/subscription_service.dart';
 import '../../services/account_deletion_service.dart';
@@ -29,11 +27,13 @@ import '../../services/home_widget_service.dart';
 import '../../services/app_lock_service.dart';
 import '../../services/firebase_email_auth_service.dart';
 import '../../features/auth/pattern_lock_screen.dart';
-import '../../features/legal/legal_consent_dialog.dart';
 import '../../features/legal/legal_document_screen.dart';
 import '../../features/trust/trust_dashboard_screen.dart';
 import 'location_permission_tile.dart';
+import 'settings_language_section.dart';
+import 'settings_memory_film_tile.dart';
 import 'settings_plan_cards.dart';
+import 'settings_recommended_setup.dart';
 import 'settings_section_header.dart';
 import 'user_guide_pdf_screen.dart';
 
@@ -96,6 +96,8 @@ class SettingsScreen extends ConsumerWidget {
         addRepaintBoundaries: true,
         addAutomaticKeepAlives: true,
         children: [
+          const SettingsLanguageSection(),
+          const Divider(),
           SettingsSectionHeader(
             title: t['settings_sec_help']!,
             subtitle: t['settings_sec_help_sub']!,
@@ -109,6 +111,14 @@ class SettingsScreen extends ConsumerWidget {
             onTap: () => _showUsageGuide(context, t),
           ),
           const Divider(),
+          const SettingsMemoryFilmSection(),
+          const Divider(),
+          SettingsRecommendedSetup(
+            onOpenWidgetGuide: () => _showWidgetGuide(context, t),
+            onOpenRecallGuide: () =>
+                _showUsageGuide(context, t, scrollToRecall: true),
+          ),
+          const Divider(),
           SettingsSectionHeader(
             title: t['settings_sec_plan']!,
             subtitle: t['settings_sec_plan_sub']!,
@@ -116,20 +126,75 @@ class SettingsScreen extends ConsumerWidget {
           ),
           const SettingsPlanOverviewCard(),
           ListTile(
+            leading: const Icon(Icons.restore_rounded),
+            title: Text(t['pro_restore']!),
+            subtitle: Text(t['pro_restore_hint'] ?? t['pro_refresh_status_hint']!),
+            onTap: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              messenger.showSnackBar(
+                SnackBar(content: Text(t['pro_restore_working'] ?? 'Restoring…')),
+              );
+              try {
+                await SubscriptionService.instance.ensureInitialized();
+                final status = await SubscriptionService.instance.restorePurchases();
+                if (!context.mounted) return;
+                if (status == null) {
+                  messenger.showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        AppEnv.hasRevenueCat
+                            ? t['pro_store_pending']!
+                            : t['pro_store_pending_no_key']!,
+                      ),
+                    ),
+                  );
+                  return;
+                }
+                ref.read(subscriptionStatusProvider.notifier).state = status;
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      status.isProActive
+                          ? (t['pro_restore_ok'] ?? t['sub_refresh_pro']!)
+                          : (t['pro_restore_none'] ?? t['sub_refresh_free']!),
+                    ),
+                  ),
+                );
+              } catch (_) {
+                if (!context.mounted) return;
+                messenger.showSnackBar(
+                  SnackBar(content: Text(t['pro_restore_error']!)),
+                );
+              }
+            },
+          ),
+          ListTile(
             leading: const Icon(Icons.refresh_rounded),
             title: Text(t['pro_refresh_status']!),
             subtitle: Text(t['pro_refresh_status_hint']!),
             onTap: () async {
-              final refreshed = await SubscriptionService.instance.refreshEntitlements();
-              if (!context.mounted) return;
-              ref.read(subscriptionStatusProvider.notifier).state = refreshed;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(
-                    refreshed.isProActive ? t['sub_refresh_pro']! : t['sub_refresh_free']!,
-                  ),
-                ),
+              final messenger = ScaffoldMessenger.of(context);
+              messenger.showSnackBar(
+                SnackBar(content: Text(t['pro_refresh_working'] ?? 'Refreshing…')),
               );
+              try {
+                await SubscriptionService.instance.ensureInitialized();
+                final refreshed = await SubscriptionService.instance.refreshEntitlements();
+                if (!context.mounted) return;
+                ref.read(subscriptionStatusProvider.notifier).state = refreshed;
+                messenger.showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      refreshed.isProActive ? t['sub_refresh_pro']! : t['sub_refresh_free']!,
+                    ),
+                  ),
+                );
+              } catch (_) {
+                if (!context.mounted) return;
+                messenger.showSnackBar(
+                  SnackBar(content: Text(t['pro_restore_error']!)),
+                );
+              }
             },
           ),
           const Divider(),
@@ -257,12 +322,25 @@ class SettingsScreen extends ConsumerWidget {
               ref.read(proactiveRecallEnabledProvider.notifier).state = enabled;
               await writeProactiveRecallEnabled(ref.read(preferencesProvider), enabled);
               if (enabled) {
-                await BackgroundRecallWorker.register();
-                final bgOk = await LocationPermissionService.requestBackgroundLocationForRecall();
-                if (context.mounted && !bgOk) {
+                final result = await RecallBackgroundCoordinator.enableAndSync(
+                  prefs: ref.read(preferencesProvider),
+                  memories: ref.read(memoryListProvider),
+                );
+                if (context.mounted && !result.backgroundLocation) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(t['proactive_recall_bg_hint']!),
+                      action: SnackBarAction(
+                        label: t['proactive_recall_open_settings']!,
+                        onPressed: LocationPermissionService.openAppSettings,
+                      ),
+                    ),
+                  );
+                }
+                if (context.mounted && !result.batteryUnrestricted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(t['proactive_recall_battery_hint']!),
                       action: SnackBarAction(
                         label: t['proactive_recall_open_settings']!,
                         onPressed: LocationPermissionService.openAppSettings,
@@ -475,54 +553,6 @@ class SettingsScreen extends ConsumerWidget {
               }).toList(),
             ),
           ),
-          ListTile(
-            title: Text(t['language']!),
-            subtitle: Text(
-              (() {
-                final id = localeIdFromLocale(ref.watch(languageProvider));
-                return appLocaleOptionForId(id)?.menuLabel ?? id;
-              })(),
-            ),
-            trailing: const Icon(Icons.chevron_right_rounded),
-            onTap: () async {
-              final currentId = localeIdFromLocale(ref.read(languageProvider));
-              final selected = await showModalBottomSheet<AppLocaleOption>(
-                context: context,
-                showDragHandle: true,
-                builder: (ctx) {
-                  return SafeArea(
-                    child: ListView(
-                      shrinkWrap: true,
-                      children: [
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                          child: Text(
-                            t['language']!,
-                            style: Theme.of(ctx).textTheme.titleMedium,
-                          ),
-                        ),
-                        for (final option in kAppLocaleOptions)
-                          ListTile(
-                            leading: Text(option.flag, style: const TextStyle(fontSize: 22)),
-                            title: Text(option.nativeLabel),
-                            trailing: option.id == currentId
-                                ? Icon(Icons.check_rounded, color: Theme.of(ctx).colorScheme.primary)
-                                : null,
-                            onTap: () => Navigator.pop(ctx, option),
-                          ),
-                      ],
-                    ),
-                  );
-                },
-              );
-              if (selected == null) return;
-              ref.read(languageProvider.notifier).state = selected.locale;
-              await writeLanguageCode(
-                ref.read(preferencesProvider),
-                selected.id,
-              );
-            },
-          ),
           const Divider(),
           SettingsSectionHeader(
             title: t['settings_sec_lock'] ?? '기기 잠금',
@@ -644,12 +674,7 @@ class SettingsScreen extends ConsumerWidget {
           ListTile(
             leading: const Icon(Icons.logout),
             title: Text(t['logout']!),
-            onTap: () async {
-              final prefs = ref.read(preferencesProvider);
-              await writeGuestMode(prefs, false);
-              ref.read(guestModeProvider.notifier).state = false;
-              await FirebaseEmailAuthService.instance.signOut();
-            },
+            onTap: () => _confirmLogout(context, ref, t),
           ),
           const Divider(),
           const _AppVersionTile(),
@@ -727,13 +752,45 @@ class SettingsScreen extends ConsumerWidget {
       guestMode: ref.read(guestModeProvider),
     );
     if (!context.mounted) return;
-    final message = report.uploaded > 0
-        ? t['cloud_sync_done']!.replaceAll('{uploaded}', '${report.uploaded}')
-        : t['cloud_sync_none']!;
+    final message = _cloudSyncMessage(t, report);
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     if (report.uploaded > 0) {
       await ref.read(memoryListProvider.notifier).reload();
     }
+  }
+
+  String _cloudSyncMessage(Map<String, String> t, MemoryCloudSyncReport report) {
+    switch (report.skipReason) {
+      case MemoryCloudSyncSkipReason.notConfigured:
+        return t['cloud_sync_need_config'] ?? '클라우드가 설정되지 않은 설치본입니다.';
+      case MemoryCloudSyncSkipReason.notLoggedIn:
+        return t['cloud_sync_need_login'] ?? '동기화하려면 로그인이 필요합니다.';
+      case MemoryCloudSyncSkipReason.localOnlyMode:
+        return t['cloud_sync_local_only'] ?? '게스트·프라이버시 모드에서는 클라우드 동기화를 사용할 수 없습니다.';
+      case MemoryCloudSyncSkipReason.noPro:
+        return t['cloud_sync_need_pro'] ?? '클라우드 동기화는 MemoryOS Pro가 필요합니다.';
+      case MemoryCloudSyncSkipReason.none:
+        break;
+    }
+    if (report.uploaded > 0 && report.failed > 0) {
+      return (t['cloud_sync_partial'] ?? '업로드 {uploaded}건 · 실패 {failed}건')
+          .replaceAll('{uploaded}', '${report.uploaded}')
+          .replaceAll('{failed}', '${report.failed}');
+    }
+    if (report.uploaded > 0) {
+      return t['cloud_sync_done']!.replaceAll('{uploaded}', '${report.uploaded}');
+    }
+    if (report.failed > 0) {
+      final base = (t['cloud_sync_failed'] ?? '업로드에 실패했습니다 ({failed}건). 나중에 다시 시도하세요.')
+          .replaceAll('{failed}', '${report.failed}');
+      final err = report.firstError;
+      if (err != null && err.isNotEmpty) {
+        final short = err.replaceAll(RegExp(r'\s+'), ' ').trim();
+        return '$base (${short.length > 120 ? '${short.substring(0, 117)}…' : short})';
+      }
+      return base;
+    }
+    return t['cloud_sync_none']!;
   }
 
   Future<void> _openUserGuideWeb(BuildContext context, Map<String, String> t) async {
@@ -769,6 +826,39 @@ class SettingsScreen extends ConsumerWidget {
         builder: (_) => UserGuidePdfScreen(title: t['user_guide_title']!),
       ),
     );
+  }
+
+  Future<void> _confirmLogout(
+    BuildContext context,
+    WidgetRef ref,
+    Map<String, String> t,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(t['logout_confirm_title']!),
+        content: Text(t['logout_confirm_body']!),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(t['cancel']!),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(t['logout_confirm_action']!),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !context.mounted) return;
+
+    final prefs = ref.read(preferencesProvider);
+    await writeGuestMode(prefs, false);
+    ref.read(guestModeProvider.notifier).state = false;
+    await FirebaseEmailAuthService.instance.signOut();
+    if (!context.mounted) return;
+    // 설정 화면을 닫고 AuthGate가 로그인 화면으로 전환합니다.
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   Future<void> _confirmAccountDeletion(
@@ -915,6 +1005,10 @@ class SettingsScreen extends ConsumerWidget {
                 (Icons.history_rounded, t['guide_replay']!),
                 (Icons.notifications_active_outlined, t['guide_recall']!),
               ]),
+              if ((t['guide_sec_film'] ?? '').isNotEmpty && (t['guide_film'] ?? '').isNotEmpty)
+                _buildGuideSection(context, t['guide_sec_film']!, [
+                  (Icons.movie_creation_outlined, t['guide_film']!),
+                ]),
               _buildGuideSection(context, t['guide_sec_ocr']!, [
                 (Icons.document_scanner_outlined, t['guide_ocr_hybrid']!),
                 (Icons.savings_outlined, t['guide_ocr_lowcost']!),

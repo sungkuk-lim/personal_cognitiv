@@ -1,5 +1,56 @@
 # Play Store 등록 자료 (MemoryOS)
 
+**현재 앱 버전:** **1.0.28+32** (2026-08-15)  
+**스토어 업로드:** 내부·비공개 테스트에 **1.0.28 (32)** 반영 · 프로덕션 액세스 승인 대기 중  
+
+---
+
+## ⛔ 다음 Play 업로드(14일 후 포함) — 필수 조건
+
+업로드 요청 시 Agent는 아래가 **모두 충족된 AAB만** 빌드·업로드한다. 하나라도 빠지면 올리지 말고 먼저 고친다.
+
+| # | 조건 | 확인 |
+|---|------|------|
+| 1 | `secrets.local.json`에 `REVENUECAT_ANDROID_KEY` 있음 | ☐ |
+| 2 | `.\scripts\build_bundle.ps1`로 AAB 빌드 (키 `--dart-define` 포함, 경고 없이) | ☐ |
+| 3 | Play Console 구독 `memoryos_pro_monthly` / `memoryos_pro_annual` ACTIVE | ☐ |
+| 4 | RevenueCat entitlement `pro` + Offering에 위 상품 연결 | ☐ |
+| 5 | 실기기(또는 내부 테스트): 설정 → MemoryOS Pro에 **구독 버튼** 표시 확인 | ☐ |
+
+키 없는 로컬 APK를 Play에 올리면 로그인은 되는데 구독만 안 보이는 상태가 된다.
+
+---
+
+## 상용화 가능 여부 · 완성도 판단 (1.0.25)
+
+### 한 줄 결론
+- **비공개/소프트 런치(닫힌 테스트):** **가능** — 핵심 루프·관계망·검색·회상이 제품으로 쓸 수 있는 수준.
+- **공개 상용(프로덕션 전체 공개):** **조건부** — 제품은 준비됐고, **결제 E2E·테스터 기간·정산/정책 운영**이 남은 상태.
+
+### 영역별 완성도 (전문가 추정)
+
+| 영역 | 추정 | 근거 |
+|------|------|------|
+| 핵심 제품 (저장→타임라인→검색→관계망→회상) | **92–95%** | 단위 테스트 397건, 실기기 설치·QA 진행 중 |
+| 관계망 UX·미디어 신뢰 | **~90%** | 1.0.25에서 동일 썸네일 중복·저장 재시도 버그 완화 |
+| 검색 UX | **~90%** | 로컬/AI 구분, 중복·누적 제거, 전체 해제 수정 |
+| Pro / SaaS 코드 | **~93%** | Paywall·쿼터·대시보드 구현, 웹훅·실결제 운영 확인 잔여 |
+| 법적·스토어 자산 | **~95%** | Pages 정책 URL·스크린샷·구독 상품 ACTIVE |
+| 공개 출시 운영 준비 | **~70–75%** | Soft launch 체크리스트 Human 항목 다수 ☐ |
+| **종합 (제품)** | **~93%** | |
+| **종합 (공개 상용 가능 시점)** | **~78–82%** | 운영 블로커 해소 후 90%+ |
+
+### 공개 전에 꼭 남긴 것
+1. RevenueCat 웹훅 → Supabase 재확인, 라이선스 테스터로 **실결제 1회**
+2. Soft launch D-4~D-3 실기기 QA (음성·미디어·회상·오프라인·Crashlytics)
+3. 닫힌 테스트 테스터 규모·기간 (Play 정책: 공개 전 비공개 테스트 요건)
+4. 정산 계좌·사업자 등 Play 콘솔 블로커
+
+→ **관계망을 차별점으로 한 소프트 런치/B2C 파일럿은 지금 가능.**  
+→ **불특정 다수 대상 프로덕션 전면 공개는 위 운영 항목 완료 후 권장.**
+
+---
+
 ## 앱 이름
 - 한국어: **MemoryOS · 모담넷**
 - 영어: **MemoryOS**
@@ -19,13 +70,12 @@ MemoryOS(모담넷)는 폴더 없이 기억을 쌓고, 관계망으로 사람·�
 • Pro·클라우드: 의미 검색·AI 답변, 관계 인사이트, 복합 질의, Graph AI 조각, 사진 AI 분석
 • 관계망은 항상 로컬 규칙으로 먼저 구성되고, AI는 보조(Pro + 설정 ON 시)
 
-■ 핵심 기능
-• 음성 저장: 말하면 분류·요약해 저장
-• 사진·OCR: 촬영한 글자·장면을 기억으로 보관
-• 관계망: 사람·장소·키워드 연결을 시각화 (로컬 즉시)
-• 대화형 검색(Pro): "지난달 제주도 뭐 했지?"처럼 질문
-• 회상 타임라인: 월별로 기억을 다시 보기
-• 선제적 소환: 과거 방문 장소에서 잊은 기억 알림
+■ 1.0.25 핵심 기능
+• 타임라인: 날짜 헤더·가로형 카드(썸네일·키워드)
+• 검색: 로컬 결과와 AI 요약을 한 화면에서 구분, 중복 결과 제거
+• 관계망: 사람·장소·키워드 연결 시각화, 동일 사진 중복 표시 방지
+• 회상: 월별 모자이크·스와이프, 장소 기반 알림(~250m)
+• 음성·사진·OCR·JSON 백업·홈 위젯·다국어
 
 ■ 프라이버시
 • 게스트·프라이버시 모드: 기기에만 저장 가능
@@ -37,6 +87,7 @@ MemoryOS(모담넷)는 폴더 없이 기억을 쌓고, 관계망으로 사람·�
 무료: 기기 저장·로컬 관계망·키워드 검색·장소 회상 알림
 
 개발: theNext
+이용 가이드: https://sungkuk-lim.github.io/personal_cognitiv/user_guide.html
 ```
 
 ## 카테고리
@@ -49,66 +100,46 @@ MemoryOS(모담넷)는 폴더 없이 기억을 쌓고, 관계망으로 사람·�
 
 | # | 화면 | 캡처 내용 |
 |---|------|-----------|
-| 1 | 타임라인 | 기억 카드 2~3개 |
-| 2 | 검색 | 대화형 검색 결과 |
-| 3 | 관계망 | 노드 그래프 |
-| 4 | 회상 | 월별 썸네일 |
+| 1 | 타임라인 | 가로형 기억 카드 2~3개 |
+| 2 | 검색 | 로컬 카드 + AI 요약 박스 |
+| 3 | 관계망 | 노드 그래프 (썸네일 중복 없음) |
+| 4 | 회상 | 월별 모자이크 |
 | 5 | 설정 | 프라이버시·OCR 옵션 |
-
-```powershell
-# 에뮬레이터 또는 실기기에서
-adb exec-out screencap -p > screenshot_01.png
-```
 
 ## 개인정보 처리방침 URL
 
-Play Console에 **공개 HTTPS URL** 필수.
+라이브:
+```
+https://sungkuk-lim.github.io/personal_cognitiv/privacy.html
+https://sungkuk-lim.github.io/personal_cognitiv/terms.html
+https://sungkuk-lim.github.io/personal_cognitiv/user_guide.html
+```
 
-### 방법 A: GitHub Pages (무료)
-1. 저장소 Settings → Pages → Source: `main` / `/docs`
-2. `docs/privacy.html` 배포 후 URL 예:
-   `https://thenext-modamnet.github.io/personal_cognitiv/privacy.html`
-
-### 방법 B: Supabase Storage (이미 사용 중)
-`docs/PRIVACY_POLICY.md`를 public bucket에 업로드 후 public URL 사용
-
-현재 로컬 파일: [docs/PRIVACY_POLICY.md](PRIVACY_POLICY.md)  
-웹용 HTML: [docs/privacy.html](privacy.html)
+앱 기본값: `lib/core/app_urls.dart`
 
 ## 릴리스 빌드
 
 ```powershell
-# 1. 키스토어 (최초 1회)
-.\scripts\create_keystore.ps1
-copy android\key.properties.example android\key.properties
-# key.properties 값 입력
-
-# 2. Firebase
-.\scripts\setup_firebase.ps1
-
-# 3. 릴리스 AAB (권장 · Play)
 .\scripts\build_bundle.ps1
-# 또는 APK: .\scripts\build_release.ps1
+# 업로드는 명시 요청 시에만 (이 문서 갱신 = 업로드 아님)
 ```
 
 출력: `build/app/outputs/bundle/release/app-release.aab`  
-현재 준비 버전: **1.0.6+9** (2026-07-25) — Play API로 번들 업로드까지 완료, 트랙 **commit**은 서비스 계정 권한 부족 시 콘솔에서 수동 저장
+준비 버전 라벨: **1.0.25+29**
 
-## 완성도 (2026-07 기준)
+## 완성도 (2026-07-30 · 1.0.25)
 
 | 항목 | 상태 |
 |------|------|
-| 핵심 기능 | **~95%** |
-| UX·안정성 | ~94% |
-| 단위 테스트 | **360건+ 통과** |
+| 핵심 기능 | **~93–95%** |
+| UX·안정성 | ~90–94% |
+| 단위 테스트 | **397건 통과** |
 | Firebase Crashlytics | **연동 완료** |
-| 릴리스 APK 서명 | **완료** |
-| 개인정보·이용약관 | **앱 내 뷰어** |
+| 릴리스 APK/AAB 서명 | **완료** |
+| 개인정보·이용약관 | **앱 내 + Pages** |
 | Pro SaaS 대시보드 | **구현 완료** |
-| 설정 플랜·Graph AI 안내 | **구현 완료** |
-| 스토어 준비 | ~95% |
-| **스토어 등록 권장** | **TOTAL.md·SOFT_LAUNCH 완료 후** |
+| 스토어 자산 | ~95% |
+| **비공개 테스트 권장** | **가능** |
+| **공개 상용 권장** | **SOFT_LAUNCH Human 항목 후** |
 
-종합 가이드: [TOTAL.md](TOTAL.md) · 문서 색인: [MODAMNET_INDEX.md](MODAMNET_INDEX.md)
-
-남은 작업: [SOFT_LAUNCH_7DAY.md](SOFT_LAUNCH_7DAY.md) D-7~D-Day, Play 구독·정책 URL·스크린샷
+종합 가이드: [TOTAL.md](TOTAL.md) · 사용자 가이드: [MODAMNET_USER_GUIDE.md](MODAMNET_USER_GUIDE.md) · [SOFT_LAUNCH_7DAY.md](SOFT_LAUNCH_7DAY.md)
